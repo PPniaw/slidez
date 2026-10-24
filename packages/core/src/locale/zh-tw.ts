@@ -141,7 +141,7 @@ export const zhTW: Locale = {
     upNext: '下一張',
     lastSlide: '最後一張',
     endOfDeck: '簡報結束',
-    speakerNotes: '演講備忘',
+    speakerNotes: '講稿',
     notesTextSmaller: '縮小備忘文字',
     notesTextLarger: '放大備忘文字',
     noNotesPrefix: '這一頁沒有演講備忘。在你的簡報模組中加入 ',
@@ -514,7 +514,7 @@ export const zhTW: Locale = {
   notesDrawer: {
     toggle: '講稿',
     pageLabel: '第 {n} / {total} 頁',
-    placeholder: '為這一頁撰寫演講備忘（支援 Markdown）…',
+    placeholder: '寫下這一頁要講的重點（支援 Markdown）…',
     statusSaving: '儲存中…',
     statusSaved: '已儲存',
     statusError: '儲存失敗：{msg}',

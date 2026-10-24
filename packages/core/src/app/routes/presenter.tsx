@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Pencil,
   RotateCcw,
   Square,
   Sun,
@@ -19,6 +20,7 @@ import {
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { useNotes } from '@/lib/inspector/use-notes';
 import { hasModifier, isBackwardKey, isForwardKey, isTypingTarget } from '@/lib/keys';
 import { useLiveRoom } from '@/lib/live/room';
 import { useDocumentTitle } from '@/lib/use-document-title';
@@ -203,7 +205,10 @@ export function Presenter() {
   }
 
   return (
-    <div className="dark flex h-dvh w-screen flex-col overflow-hidden bg-background text-foreground">
+    <div
+      className="dark flex h-dvh w-screen flex-col overflow-hidden bg-background text-foreground"
+      style={PRESENTER_TEXT}
+    >
       <PresenterTopBar
         index={index}
         total={total}
@@ -216,14 +221,14 @@ export function Presenter() {
 
       <div
         className={cn(
-          'grid min-h-0 flex-1 grid-cols-1 gap-6 px-6 pb-4 lg:grid-cols-[2fr_1fr]',
-          showLive && 'lg:grid-cols-[3fr_2fr_2fr]',
+          'grid min-h-0 flex-1 grid-cols-1 gap-6 px-6 pt-4 pb-4 lg:grid-cols-[2fr_1fr]',
+          showLive && 'lg:grid-cols-[2fr_1fr_auto]',
         )}
       >
         {/* Now-showing */}
         <section className="flex min-h-0 flex-col gap-3">
           <SectionLabel>{t.presenter.nowShowing}</SectionLabel>
-          <div className="relative min-h-0 flex-1 overflow-hidden rounded-[8px] bg-black ring-1 ring-border">
+          <div className="relative min-h-0 flex-1 overflow-hidden rounded-[8px] bg-black ring-1 ring-foreground/20">
             <SlideCanvas flat design={slide.design}>
               <SlidePageProvider index={index} total={total}>
                 <PreviewStepHost revealed={stepIndex}>
@@ -248,10 +253,10 @@ export function Presenter() {
 
         {/* Next + notes */}
         <aside className="flex min-h-0 flex-col gap-4">
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             <SectionLabel>{hasNext ? t.presenter.upNext : t.presenter.lastSlide}</SectionLabel>
             <div
-              className="relative w-full overflow-hidden rounded-[8px] bg-black ring-1 ring-border"
+              className="relative w-full overflow-hidden rounded-[8px] bg-black ring-1 ring-foreground/20"
               style={{ aspectRatio: `${CANVAS_WIDTH}/${CANVAS_HEIGHT}` }}
             >
               {NextPage ? (
@@ -270,7 +275,7 @@ export function Presenter() {
             </div>
           </div>
 
-          <SpeakerNotes note={note} />
+          <SpeakerNotes slideId={slideId} index={index} note={note} />
 
           <PresenterJumpControl total={total} current={index} onJump={goTo} />
         </aside>
@@ -310,9 +315,9 @@ function PresenterTopBar({
 }) {
   const t = useLocale();
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-hairline px-6">
+    <header className="flex h-12 shrink-0 items-center justify-between border-b border-foreground/15 px-6">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="eyebrow text-white/45">{t.presenter.eyebrow}</span>
+        <span className="eyebrow text-white/75">{t.presenter.eyebrow}</span>
         {slideIds.length > 1 ? (
           <DeckSwitcher slideId={slideId} slideTitle={slideTitle} onSwitchDeck={onSwitchDeck} />
         ) : (
@@ -331,7 +336,7 @@ function PresenterTopBar({
         <ElapsedClock startedAt={startedAt} />
         <div className="font-mono text-[18px] tabular-nums">
           <span className="text-foreground">{pad2(index + 1)}</span>
-          <span className="text-foreground/30"> / </span>
+          <span className="text-foreground/50"> / </span>
           <span className="text-muted-foreground">{pad2(total)}</span>
         </div>
       </div>
@@ -520,7 +525,7 @@ function PresenterBottomBar({
 }) {
   const t = useLocale();
   return (
-    <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-hairline px-6 py-3">
+    <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-foreground/15 px-6 py-3">
       <div className="flex items-center gap-2">
         <Button variant="outline" onClick={onPrev} disabled={index === 0}>
           <ChevronLeft className="size-4" /> {t.presenter.prev}
@@ -560,8 +565,49 @@ const NOTES_FONT_SIZES = [11, 12, 13.5, 15, 17, 20, 24, 28];
 const NOTES_FONT_SIZE_DEFAULT_INDEX = 2;
 const NOTES_FONT_SIZE_STORAGE_KEY = 'open-slide:presenter-notes-font-size';
 
-function SpeakerNotes({ note }: { note: string | undefined }) {
+// Fork: notes are edited right here in the workspace, so the empty state
+// points at the Edit button instead of the slide module's source.
+const NOTES_ZH = {
+  edit: '編輯',
+  done: '完成',
+  editHint: '編輯這一頁的講稿',
+  empty: '這一頁還沒有講稿。',
+  emptyEdit: '按「編輯」寫下這一頁要講的重點。',
+  gap: '',
+  placeholder: '這一頁要講什麼？（支援 Markdown）',
+  saving: '儲存中…',
+  saved: '已儲存',
+  failed: '儲存失敗',
+};
+const NOTES_EN: typeof NOTES_ZH = {
+  edit: 'Edit',
+  done: 'Done',
+  editHint: 'Edit the notes for this slide',
+  empty: 'No speaker notes for this slide.',
+  emptyEdit: 'Press Edit to write what to say here.',
+  gap: ' ',
+  placeholder: 'What to say on this slide (Markdown works)',
+  saving: 'Saving…',
+  saved: 'Saved',
+  failed: 'Could not save',
+};
+
+function SpeakerNotes({
+  slideId,
+  index,
+  note,
+}: {
+  slideId: string;
+  index: number;
+  note: string | undefined;
+}) {
   const t = useLocale();
+  const n = t.id.startsWith('zh') ? NOTES_ZH : NOTES_EN;
+  const editable = import.meta.env.DEV;
+  // Saved text comes back from here: our own writes don't reload the slide module.
+  const { value, setValue, status, flush } = useNotes(slideId, index, note);
+  const [editing, setEditing] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [sizeIndex, setSizeIndex] = useState(() => {
     if (typeof window === 'undefined') return NOTES_FONT_SIZE_DEFAULT_INDEX;
     const stored = Number(window.localStorage.getItem(NOTES_FONT_SIZE_STORAGE_KEY));
@@ -574,11 +620,53 @@ function SpeakerNotes({ note }: { note: string | undefined }) {
     window.localStorage.setItem(NOTES_FONT_SIZE_STORAGE_KEY, String(NOTES_FONT_SIZES[sizeIndex]));
   }, [sizeIndex]);
 
+  useEffect(() => {
+    if (editing) textareaRef.current?.focus();
+  }, [editing]);
+
+  const startEditing = () => editable && setEditing(true);
+  const finishEditing = () => {
+    void flush();
+    setEditing(false);
+  };
+  const statusText =
+    status.kind === 'saving'
+      ? n.saving
+      : status.kind === 'saved'
+        ? n.saved
+        : status.kind === 'error'
+          ? n.failed
+          : '';
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <SectionLabel>{t.presenter.speakerNotes}</SectionLabel>
         <div className="flex items-center gap-1">
+          {statusText && (
+            <span
+              className={cn(
+                'mr-1 text-[12px]',
+                status.kind === 'error' ? 'text-destructive' : 'text-muted-foreground',
+              )}
+              title={status.kind === 'error' ? status.message : undefined}
+              aria-live="polite"
+            >
+              {statusText}
+            </span>
+          )}
+          {editable && (
+            <Button
+              variant={editing ? 'secondary' : 'ghost'}
+              size="xs"
+              onClick={editing ? finishEditing : startEditing}
+              title={editing ? n.done : n.editHint}
+              data-notes-edit
+            >
+              {editing ? <Check className="size-3.5" /> : <Pencil className="size-3.5" />}
+              {editing ? n.done : n.edit}
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon-xs"
@@ -601,22 +689,43 @@ function SpeakerNotes({ note }: { note: string | undefined }) {
           </Button>
         </div>
       </div>
-      <div
-        className="min-h-0 flex-1 overflow-y-auto rounded-[6px] border border-border bg-card p-3 leading-relaxed text-card-foreground"
-        style={{ fontSize: NOTES_FONT_SIZES[sizeIndex] }}
-      >
-        {note?.trim() ? (
-          <NoteMarkdown text={note} />
-        ) : (
-          <span className="text-muted-foreground">
-            {t.presenter.noNotesPrefix}
-            <code className="rounded-[3px] bg-muted px-1 py-0.5 font-mono text-[0.9em]">
-              export const notes = […]
-            </code>
-            {t.presenter.noNotesSuffix}
-          </span>
-        )}
-      </div>
+      {editing ? (
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={() => void flush()}
+          onKeyDown={(e) => {
+            // Escape during IME composition only dismisses the candidate list.
+            if (e.key === 'Escape' && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              finishEditing();
+            } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+              e.preventDefault();
+              finishEditing();
+            }
+          }}
+          placeholder={n.placeholder}
+          spellCheck
+          data-notes-editor
+          className="min-h-0 flex-1 resize-none rounded-[6px] border border-foreground/40 bg-card p-3 leading-relaxed text-card-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          style={{ fontSize: NOTES_FONT_SIZES[sizeIndex] }}
+        />
+      ) : (
+        <div
+          className="min-h-0 flex-1 overflow-y-auto rounded-[6px] border border-foreground/20 bg-card p-3 leading-relaxed text-card-foreground"
+          style={{ fontSize: NOTES_FONT_SIZES[sizeIndex] }}
+        >
+          {value.trim() ? (
+            <NoteMarkdown text={value} />
+          ) : (
+            <span className="text-muted-foreground">
+              {n.empty}
+              {editable && `${n.gap}${n.emptyEdit}`}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -652,15 +761,23 @@ function PresenterJumpControl({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder={(current + 1).toString()}
-        className="h-8 w-20 rounded-[5px] border border-border bg-card px-2 font-mono text-[12px] tabular-nums outline-none focus-visible:border-foreground/30"
+        className="h-8 w-20 rounded-[5px] border border-foreground/20 bg-card px-2 font-mono text-[12px] tabular-nums outline-none focus-visible:border-foreground/30"
       />
       <span className="font-mono text-[11px] tabular-nums text-muted-foreground">/ {total}</span>
     </form>
   );
 }
 
+// Fork: brighter text than the dark theme's defaults, since the presenter reads
+// it from a step back. Inline so it wins over the unlayered `.dark` rule.
+const PRESENTER_TEXT = {
+  '--foreground': 'oklch(0.97 0 0)',
+  '--card-foreground': 'oklch(0.97 0 0)',
+  '--muted-foreground': 'oklch(0.82 0 0)',
+} as React.CSSProperties;
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <span className="eyebrow">{children}</span>;
+  return <span className="eyebrow text-[13px] text-foreground/85">{children}</span>;
 }
 
 function Clock() {

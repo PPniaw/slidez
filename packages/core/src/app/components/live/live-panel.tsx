@@ -7,6 +7,7 @@ import {
   EyeOff,
   MessagesSquare,
   MonitorUp,
+  PanelRightClose,
   X,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
@@ -27,6 +28,9 @@ import { cn } from '@/lib/utils';
 const ZH = {
   button: '互動',
   title: '現場互動',
+  collapse: '收合現場互動',
+  expand: '展開現場互動',
+  unread: '{n} 則新的發問或回饋',
   close: '關閉',
   online: '{n} 人在線',
   joined: '{joined}/{cap} 人加入',
@@ -76,6 +80,9 @@ const ZH = {
 const EN: typeof ZH = {
   button: 'Live',
   title: 'Live interaction',
+  collapse: 'Collapse live interaction',
+  expand: 'Expand live interaction',
+  unread: '{n} new questions or comments',
   close: 'Close',
   online: '{n} online',
   joined: '{joined}/{cap} joined',
@@ -159,19 +166,119 @@ export function LivePanelButton({ slideId }: { slideId: string }) {
   );
 }
 
-/** The live panel as a column of the presenter window, next to the speaker notes. */
+const COLLAPSED_KEY = 'open-slide:presenter-live-collapsed';
+
+/**
+ * The live panel as the presenter window's last column. It collapses to a
+ * thin strip that counts questions and comments arriving meanwhile; the
+ * panel stays mounted so the room connection (and the count) keeps going.
+ */
 export function PresenterLivePanel({ slideId }: { slideId: string }) {
-  return <LivePanel slideId={slideId} embedded />;
+  const s = useLocale().id.startsWith('zh') ? ZH : EN;
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem(COLLAPSED_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [total, setTotal] = useState(0);
+  const [seen, setSeen] = useState(0);
+  const unread = collapsed ? Math.max(0, total - seen) : 0;
+
+  useEffect(() => {
+    if (!collapsed) setSeen(total);
+  }, [collapsed, total]);
+
+  const toggle = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    try {
+      window.localStorage.setItem(COLLAPSED_KEY, next ? '1' : '0');
+    } catch {
+      // Private mode: the choice just isn't remembered.
+    }
+  };
+
+  return (
+    <section
+      data-presenter-live
+      data-collapsed={collapsed || undefined}
+      className={cn(
+        'flex min-h-0 flex-col gap-3',
+        collapsed ? 'lg:w-12' : 'lg:w-[clamp(320px,28vw,460px)]',
+      )}
+    >
+      {/* The label sets the row's height, as in the other columns, so the boxes
+          line up; the button's negative margin keeps it from growing the row. */}
+      <div className="flex items-center gap-2">
+        {/* Same look as the presenter's section labels. */}
+        <span
+          className={cn(
+            'eyebrow block min-w-0 flex-1 truncate text-[13px] text-foreground/85',
+            collapsed && 'invisible',
+          )}
+        >
+          {s.title}
+        </span>
+        {!collapsed && (
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            className="-my-1"
+            onClick={toggle}
+            aria-label={s.collapse}
+            title={s.collapse}
+          >
+            <PanelRightClose className="size-4" aria-hidden />
+          </Button>
+        )}
+      </div>
+      {collapsed && (
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={s.expand}
+          title={unread ? fill(s.unread, { n: unread }) : s.expand}
+          className="relative flex min-h-0 flex-1 flex-col items-center gap-3 rounded-[8px] border border-foreground/20 py-3 text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <MessagesSquare className="size-5" aria-hidden />
+          <span className="font-medium text-[15px] tracking-[0.1em] [writing-mode:vertical-rl]">
+            {s.title}
+          </span>
+          {unread > 0 && (
+            <span
+              data-live-unread
+              className="absolute -top-1.5 -right-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 font-semibold text-[11px] text-white tabular-nums"
+            >
+              {unread > 99 ? '99+' : unread}
+            </span>
+          )}
+        </button>
+      )}
+      {/* Read from a step back while presenting: scale the whole panel up rather
+          than restyling every size it uses in the toolbar. */}
+      <div
+        className={cn('min-h-0 flex-1 flex-col', collapsed ? 'hidden' : 'flex')}
+        style={{ zoom: 1.15 }}
+      >
+        <LivePanel slideId={slideId} embedded onTotal={setTotal} />
+      </div>
+    </section>
+  );
 }
 
 function LivePanel({
   slideId,
   onClose,
   embedded = false,
+  onTotal,
 }: {
   slideId: string;
   onClose?: () => void;
   embedded?: boolean;
+  /** Questions plus comments so far, for the presenter's unread count. */
+  onTotal?: (n: number) => void;
 }) {
   const locale = useLocale().id;
   const s = locale.startsWith('zh') ? ZH : EN;
@@ -183,6 +290,10 @@ function LivePanel({
   const [sort, setSort] = useState<'top' | 'new'>('top');
   const [copied, setCopied] = useState(false);
   const { state, status, message, send } = useLiveAdmin(access);
+  const total = state ? state.questions.length + state.comments.length : 0;
+  useEffect(() => {
+    onTotal?.(total);
+  }, [onTotal, total]);
 
   useEffect(() => {
     let cancelled = false;
@@ -239,15 +350,15 @@ function LivePanel({
       data-live-panel
       aria-label={s.title}
       className={cn(
-        'flex flex-col overflow-hidden overscroll-contain border border-border bg-background text-[13px]',
+        'flex flex-col overflow-hidden overscroll-contain border bg-background text-[13px]',
         embedded
-          ? 'min-h-0 flex-1 rounded-[8px]'
-          : 'fixed top-14 right-3 bottom-3 z-50 w-[392px] max-w-[calc(100vw-24px)] rounded-[14px] shadow-[0_1px_2px_oklch(0_0_0/0.06),0_18px_48px_-16px_oklch(0_0_0/0.28)]',
+          ? 'min-h-0 flex-1 rounded-[8px] border-foreground/20'
+          : 'fixed top-14 right-3 bottom-3 z-50 w-[392px] border-border max-w-[calc(100vw-24px)] rounded-[14px] shadow-[0_1px_2px_oklch(0_0_0/0.06),0_18px_48px_-16px_oklch(0_0_0/0.28)]',
       )}
     >
       <header className="grid gap-2 border-border border-b px-4 pt-3 pb-3">
         <div className="flex items-center gap-2">
-          <h2 className="font-semibold text-[14px]">{s.title}</h2>
+          {!embedded && <h2 className="font-semibold text-[14px]">{s.title}</h2>}
           <span
             className="inline-flex items-center gap-1.5 text-muted-foreground tabular-nums"
             role="status"
@@ -386,7 +497,7 @@ function LivePanel({
                         aria-pressed={filter === f}
                         onClick={() => setFilter(f)}
                         className={cn(
-                          'h-6 rounded-[6px] px-2 text-[12px] text-muted-foreground tabular-nums transition-[background-color,color]',
+                          'h-6 whitespace-nowrap rounded-[6px] px-2 text-[12px] text-muted-foreground tabular-nums transition-[background-color,color]',
                           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
                           filter === f &&
                             'bg-background text-foreground shadow-[0_1px_2px_oklch(0_0_0/0.08)]',
@@ -399,7 +510,7 @@ function LivePanel({
                   <button
                     type="button"
                     onClick={() => setSort((v) => (v === 'top' ? 'new' : 'top'))}
-                    className="h-6 rounded-[6px] px-2 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    className="h-6 shrink-0 whitespace-nowrap rounded-[6px] px-2 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                   >
                     {sort === 'top' ? s.top : s.newest} ↕
                   </button>

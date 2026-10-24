@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { enterPlayMode, openSlide } from './helpers.ts';
+import {
+  deleteSlide,
+  duplicateSlide,
+  enterPlayMode,
+  openSlide,
+  readSlideSource,
+} from './helpers.ts';
 
 test.describe('presenter view', () => {
   test('standalone presenter shows notes and the not-linked badge', async ({ page }) => {
@@ -71,5 +77,42 @@ test.describe('presenter view', () => {
     await whiteButton.click();
     await expect(whiteButton).toHaveAttribute('aria-pressed', 'false');
     await expect(page.locator('div.absolute.inset-0.bg-white')).toBeHidden();
+  });
+
+  test('notes are written and edited right in the presenter', async ({
+    page,
+    context,
+    request,
+  }) => {
+    await duplicateSlide(request, 'alpha', 'presenter-notes');
+    try {
+      await openSlide(page, 'presenter-notes');
+      await enterPlayMode(page);
+      const popupPromise = context.waitForEvent('page');
+      await page.keyboard.press('p');
+      const popup = await popupPromise;
+      await expect(popup.getByText('01 / 03')).toBeVisible({ timeout: 30_000 });
+
+      // The slide without notes: the empty state points at the Edit button.
+      await popup.getByRole('button', { name: 'Next', exact: true }).click();
+      await expect(popup.getByText('02 / 03')).toBeVisible();
+      await expect(popup.getByText('Press Edit to write what to say here.')).toBeVisible();
+
+      await popup.locator('[data-notes-edit]').click();
+      const editor = popup.locator('[data-notes-editor]');
+      await expect(editor).toBeFocused();
+      await editor.fill('Mention the **pilot** results');
+      // Arrow keys move the caret instead of turning the slide.
+      await editor.press('ArrowLeft');
+      await expect(popup.getByText('02 / 03')).toBeVisible();
+      await popup.locator('[data-notes-edit]').click();
+
+      await expect(popup.locator('strong', { hasText: 'pilot' })).toBeVisible();
+      await expect
+        .poll(() => readSlideSource('presenter-notes'))
+        .toContain('Mention the **pilot** results');
+    } finally {
+      await deleteSlide(request, 'presenter-notes');
+    }
   });
 });
