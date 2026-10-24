@@ -6,7 +6,7 @@ import { format, useLocale } from '@/lib/use-locale';
 import { cn } from '@/lib/utils';
 
 const STORAGE_KEY = 'open-slide:notes-drawer-open';
-const DRAWER_CONTENT_H = 166;
+const DRAWER_CONTENT_H = 236;
 
 type Props = {
   slideId: string;
@@ -53,28 +53,27 @@ export function NotesDrawer({ slideId, index, total, initial }: Props) {
             return !o;
           });
         }}
-        className="flex h-9 w-full items-center gap-2 px-3 text-[12px] text-foreground/80 transition-colors duration-150 hover:bg-muted/40 active:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30"
+        className="flex h-12 w-full items-center gap-2.5 px-4 text-[17px] text-foreground transition-colors duration-150 hover:bg-muted/40 active:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30"
         aria-expanded={open}
       >
-        <NotebookPen className="size-3.5 text-muted-foreground" />
+        <NotebookPen className="size-5 text-foreground/80" />
         <span className="font-medium">{t.notesDrawer.toggle}</span>
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+        <span className="font-mono text-[14px] tabular-nums text-muted-foreground">
           {format(t.notesDrawer.pageLabel, { n: index + 1, total })}
         </span>
         <span
           className={cn(
-            'ml-auto truncate text-[11px]',
+            'ml-auto truncate text-[14px]',
             status.kind === 'error' ? 'text-destructive' : 'text-muted-foreground',
           )}
           aria-live="polite"
         >
           {statusLabel}
         </span>
-        {open ? (
-          <ChevronDown className="size-3.5 text-muted-foreground" />
-        ) : (
-          <ChevronUp className="size-3.5 text-muted-foreground" />
-        )}
+        {/* A visible target: the whole bar toggles, but this is where people look. */}
+        <span className="grid size-8 shrink-0 place-items-center rounded-[6px] border border-border bg-background text-foreground">
+          {open ? <ChevronDown className="size-5" /> : <ChevronUp className="size-5" />}
+        </span>
       </button>
       {mounted && (
         <div
@@ -84,7 +83,7 @@ export function NotesDrawer({ slideId, index, total, initial }: Props) {
             transitionDuration: `${PANEL_TRANSITION_MS}ms`,
           }}
         >
-          <div className="px-3 py-2">
+          <div className="px-4 py-2">
             <textarea
               ref={textareaRef}
               value={value}
@@ -107,7 +106,7 @@ export function NotesDrawer({ slideId, index, total, initial }: Props) {
               placeholder={t.notesDrawer.placeholder}
               rows={6}
               spellCheck
-              className="block h-[150px] w-full resize-none rounded-[6px] border border-border bg-card px-3 py-2 text-[13px] leading-relaxed text-card-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+              className="block h-[218px] w-full resize-none rounded-[6px] border border-border bg-card px-3 py-2.5 text-[16px] leading-relaxed text-card-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
             />
           </div>
         </div>
