@@ -159,7 +159,20 @@ export function LivePanelButton({ slideId }: { slideId: string }) {
   );
 }
 
-function LivePanel({ slideId, onClose }: { slideId: string; onClose: () => void }) {
+/** The live panel as a column of the presenter window, next to the speaker notes. */
+export function PresenterLivePanel({ slideId }: { slideId: string }) {
+  return <LivePanel slideId={slideId} embedded />;
+}
+
+function LivePanel({
+  slideId,
+  onClose,
+  embedded = false,
+}: {
+  slideId: string;
+  onClose?: () => void;
+  embedded?: boolean;
+}) {
   const locale = useLocale().id;
   const s = locale.startsWith('zh') ? ZH : EN;
   const timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
@@ -225,7 +238,12 @@ function LivePanel({ slideId, onClose }: { slideId: string; onClose: () => void 
     <aside
       data-live-panel
       aria-label={s.title}
-      className="fixed top-14 right-3 bottom-3 z-50 flex w-[392px] max-w-[calc(100vw-24px)] flex-col overflow-hidden overscroll-contain rounded-[14px] border border-border bg-background text-[13px] shadow-[0_1px_2px_oklch(0_0_0/0.06),0_18px_48px_-16px_oklch(0_0_0/0.28)]"
+      className={cn(
+        'flex flex-col overflow-hidden overscroll-contain border border-border bg-background text-[13px]',
+        embedded
+          ? 'min-h-0 flex-1 rounded-[8px]'
+          : 'fixed top-14 right-3 bottom-3 z-50 w-[392px] max-w-[calc(100vw-24px)] rounded-[14px] shadow-[0_1px_2px_oklch(0_0_0/0.06),0_18px_48px_-16px_oklch(0_0_0/0.28)]',
+      )}
     >
       <header className="grid gap-2 border-border border-b px-4 pt-3 pb-3">
         <div className="flex items-center gap-2">
@@ -251,15 +269,17 @@ function LivePanel({ slideId, onClose }: { slideId: string; onClose: () => void 
                   ? (message ?? s.unavailable)
                   : s.connecting}
           </span>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="ml-auto"
-            onClick={onClose}
-            aria-label={s.close}
-          >
-            <X className="size-4" aria-hidden />
-          </Button>
+          {onClose && (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className="ml-auto"
+              onClick={onClose}
+              aria-label={s.close}
+            >
+              <X className="size-4" aria-hidden />
+            </Button>
+          )}
         </div>
         {access && (
           <div className="flex min-w-0 items-center gap-2 rounded-[10px] bg-muted/60 py-1 pr-1 pl-2.5">

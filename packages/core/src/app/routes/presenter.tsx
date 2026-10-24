@@ -20,9 +20,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { hasModifier, isBackwardKey, isForwardKey, isTypingTarget } from '@/lib/keys';
+import { useLiveRoom } from '@/lib/live/room';
 import { useDocumentTitle } from '@/lib/use-document-title';
 import { format, useLocale } from '@/lib/use-locale';
 import { cn, pad2 } from '@/lib/utils';
+import { PresenterLivePanel } from '../components/live/live-panel';
 import { NoteMarkdown } from '../components/note-markdown';
 import {
   type PresenterState,
@@ -39,6 +41,8 @@ import { useSlideModule } from '../lib/use-slide-module';
 export function Presenter() {
   const { slideId = '' } = useParams();
   const { slide, error } = useSlideModule(slideId);
+  // Fork: with live interaction on, questions and feedback get their own column.
+  const showLive = useLiveRoom(slideId) !== null && !import.meta.env.PROD;
   useDocumentTitle(slide?.meta?.title);
 
   // Presenter view is a passive mirror of the projection window. It only
@@ -210,7 +214,12 @@ export function Presenter() {
         onSwitchDeck={switchDeck}
       />
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 px-6 pb-4 lg:grid-cols-[2fr_1fr]">
+      <div
+        className={cn(
+          'grid min-h-0 flex-1 grid-cols-1 gap-6 px-6 pb-4 lg:grid-cols-[2fr_1fr]',
+          showLive && 'lg:grid-cols-[3fr_2fr_2fr]',
+        )}
+      >
         {/* Now-showing */}
         <section className="flex min-h-0 flex-col gap-3">
           <SectionLabel>{t.presenter.nowShowing}</SectionLabel>
@@ -265,6 +274,8 @@ export function Presenter() {
 
           <PresenterJumpControl total={total} current={index} onJump={goTo} />
         </aside>
+
+        {showLive && <PresenterLivePanel slideId={slideId} />}
       </div>
 
       <PresenterBottomBar

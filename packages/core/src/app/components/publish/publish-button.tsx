@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { LIVE_CHANGED_EVENT } from '@/lib/live/room';
-import { PUBLISHED_CHANGED_EVENT } from '@/lib/publish/published';
+import { PUBLISHED_CHANGED_EVENT, usePublishedDecks } from '@/lib/publish/published';
 import { useLocale } from '@/lib/use-locale';
 
 type PublishRecord = { project: string; url: string; publishedAt: string };
@@ -61,6 +61,7 @@ const ZH = {
   live: '已上線',
   updatedAt: '最後更新',
   open: '開啟',
+  openLive: '打開線上的簡報',
   copy: '複製網址',
   copied: '已複製',
   unpublish: '下架',
@@ -104,6 +105,7 @@ const EN: typeof ZH = {
   live: 'Live',
   updatedAt: 'Last updated',
   open: 'Open',
+  openLive: 'Open the live deck',
   copy: 'Copy link',
   copied: 'Copied',
   unpublish: 'Unpublish',
@@ -147,6 +149,7 @@ export function PublishButton({ slideId }: { slideId: string }) {
   const [copied, setCopied] = useState(false);
   const [liveOn, setLiveOn] = useState(false);
   const [login, setLogin] = useState<DeviceLogin | 'starting' | null>(null);
+  const published = usePublishedDecks()[slideId] ?? null;
 
   const refresh = useCallback(async () => {
     setStatus(null);
@@ -236,8 +239,9 @@ export function PublishButton({ slideId }: { slideId: string }) {
   };
 
   const copy = async () => {
-    if (!record) return;
-    await navigator.clipboard.writeText(record.url);
+    const url = record?.url ?? published?.url;
+    if (!url) return;
+    await navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -255,6 +259,29 @@ export function PublishButton({ slideId }: { slideId: string }) {
         <Globe className="size-3.5" />
         <span className="hidden lg:inline">{s.button}</span>
       </Button>
+      {published && (
+        <span className="inline-flex items-center" data-publish-chip>
+          <a
+            href={published.url}
+            target="_blank"
+            rel="noreferrer"
+            title={`${s.openLive}：${published.url}`}
+            className="inline-flex h-7 max-w-[220px] items-center gap-1.5 rounded-[6px] px-1.5 font-mono text-[11.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
+            <span className="truncate">{published.url.replace(/^https?:\/\//, '')}</span>
+          </a>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            onClick={copy}
+            aria-label={copied ? s.copied : s.copy}
+            title={copied ? s.copied : s.copy}
+          >
+            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+          </Button>
+        </span>
+      )}
       <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
         <DialogContent className="sm:max-w-lg" data-publish-dialog>
           <DialogHeader>
