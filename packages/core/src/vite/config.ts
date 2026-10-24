@@ -96,6 +96,10 @@ export async function createViteConfig(opts: CreateViteConfigOptions): Promise<I
   return {
     base: config.base ?? '/',
     root: APP_ROOT,
+    // Fork: keep Vite's dep cache in the workspace. Its default sits next to
+    // APP_ROOT inside the installed package, which is read-only in a signed
+    // desktop app or a root-owned global install, and the page stays blank.
+    cacheDir: path.join(userCwd, 'node_modules', '.open-slide', 'vite'),
     configFile: false,
     envDir: userCwd,
     plugins: [
