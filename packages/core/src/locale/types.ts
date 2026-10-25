@@ -344,6 +344,9 @@ export type Locale = {
     eyebrow: string;
     scopeSlide: string;
     scopeGlobal: string;
+    deckAssetsHeading: string;
+    deckAssetsHint: string;
+    manageInDeck: string;
     /** templates: "{count} file" / "{count} files" */
     fileCount: Plural;
     createdAt: string;

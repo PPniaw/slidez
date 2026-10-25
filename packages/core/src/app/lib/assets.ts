@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { changedSlideIds } from './slides';
+import { changedSlideIds, slideIds } from './slides';
 
 export const GLOBAL_ASSET_SCOPE = '@global';
 
@@ -203,6 +203,58 @@ export type UseAssetsResult = {
 };
 
 const NOOP_RESULT = { ok: false, status: 0 } as const;
+
+export type DeckAssets = { slideId: string; assets: AssetEntry[] };
+
+/**
+ * Every deck's own `slides/<id>/assets/`, for a read-only overview beside the
+ * shared folder. Decks without assets are left out. Each deck's listing keeps
+ * its own scope, so nothing here can act on the shared folder by mistake.
+ */
+export function useDeckAssets(enabled: boolean): { decks: DeckAssets[]; loading: boolean } {
+  const available = enabled && import.meta.env.DEV;
+  const [decks, setDecks] = useState<DeckAssets[]>([]);
+  const [loading, setLoading] = useState(available);
+
+  const load = useCallback(async () => {
+    const listed = await Promise.all(
+      slideIds.map(async (slideId) => ({
+        slideId,
+        assets: await listAssets(slideId).catch((): AssetEntry[] => []),
+      })),
+    );
+    return listed.filter((deck) => deck.assets.length > 0);
+  }, []);
+
+  useEffect(() => {
+    if (!available) return;
+    let cancelled = false;
+    setLoading(true);
+    void load().then((next) => {
+      if (cancelled) return;
+      setDecks(next);
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [available, load]);
+
+  useEffect(() => {
+    if (!available || !import.meta.hot) return;
+    const refresh = () => {
+      void load().then(setDecks);
+    };
+    import.meta.hot.on('open-slide:assets-changed', refresh);
+    import.meta.hot.on('open-slide:slide-changed', refresh);
+    return () => {
+      import.meta.hot?.off('open-slide:assets-changed', refresh);
+      import.meta.hot?.off('open-slide:slide-changed', refresh);
+    };
+  }, [available, load]);
+
+  return { decks, loading };
+}
 
 export function useAssets(slideId: string): UseAssetsResult {
   const available = import.meta.env.DEV;

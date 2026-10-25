@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
@@ -60,6 +61,7 @@ import {
 import {
   type AssetEntry,
   type AssetUsage,
+  type DeckAssets,
   fetchFontAsFile,
   fetchSvgAsFile,
   GLOBAL_ASSET_SCOPE,
@@ -71,6 +73,7 @@ import {
   searchGoogleFonts,
   searchSvgl,
   useAssets,
+  useDeckAssets,
 } from '@/lib/assets';
 import { dragHasFiles } from '@/lib/dom';
 import { format, useLocale } from '@/lib/use-locale';
@@ -171,6 +174,13 @@ export function AssetView({ slideId }: Props) {
   const [scope, setScope] = useState<Scope>(lockedToGlobal ? 'global' : 'slide');
   const effectiveSlideId = scope === 'global' || slideId === null ? GLOBAL_ASSET_SCOPE : slideId;
   const { assets, loading, available, upload, rename, remove } = useAssets(effectiveSlideId);
+  // Opening another deck's assets lands on its own tab, not on the shared one
+  // this view was showing.
+  useEffect(() => {
+    if (slideId !== null) setScope('slide');
+  }, [slideId]);
+  const showDecks = scope === 'global';
+  const { decks } = useDeckAssets(showDecks);
   const [dragActive, setDragActive] = useState(false);
   const [conflict, setConflict] = useState<ConflictState | null>(null);
   const [preview, setPreview] = useState<AssetEntry | null>(null);
@@ -201,6 +211,23 @@ export function AssetView({ slideId }: Props) {
         { key: sort.key, direction: sort.direction },
       ),
     [assets, deferredQuery, sort.direction, sort.key, typeFilter, usageFilter],
+  );
+  const visibleDecks = useMemo(
+    () =>
+      decks
+        .map((deck) => ({
+          ...deck,
+          assets: sortAssets(
+            filterAssets(deck.assets, {
+              usage: usageFilter,
+              type: typeFilter,
+              search: deferredQuery,
+            }),
+            { key: sort.key, direction: sort.direction },
+          ),
+        }))
+        .filter((deck) => deck.assets.length > 0),
+    [decks, deferredQuery, sort.direction, sort.key, typeFilter, usageFilter],
   );
   const existingNames = useMemo(() => new Set(assets.map((asset) => asset.name)), [assets]);
 
@@ -510,57 +537,68 @@ export function AssetView({ slideId }: Props) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {loading ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            {t.asset.loading}
-          </div>
-        ) : assets.length === 0 ? (
-          <EmptyState />
-        ) : visibleAssets.length === 0 ? (
-          <NoMatchingAssets onClear={clearFilters} />
-        ) : (
-          <div
-            className={cn(
-              'p-4 sm:p-6',
-              viewMode === 'grid'
-                ? 'grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4 lg:grid-cols-[repeat(var(--asset-grid-columns),minmax(0,1fr))]'
-                : 'flex flex-col gap-1',
-            )}
-            style={
-              viewMode === 'grid'
-                ? ({ '--asset-grid-columns': gridColumns } as React.CSSProperties)
-                : undefined
-            }
-          >
-            {viewMode === 'list' ? <AssetListHeader sort={sort} onSort={sortByColumn} /> : null}
-            {visibleAssets.map((asset) =>
-              renaming === asset.name ? (
-                <RenameAsset
-                  key={asset.name}
-                  asset={asset}
-                  viewMode={viewMode}
-                  onCancel={() => setRenaming(null)}
-                  onSubmit={(next) => handleRename(asset, next)}
-                />
-              ) : viewMode === 'grid' ? (
-                <AssetCard
-                  key={asset.name}
-                  asset={asset}
-                  onPreview={() => setPreview(asset)}
-                  onRename={() => setRenaming(asset.name)}
-                  onDelete={() => prepareDelete(asset)}
-                />
-              ) : (
-                <AssetListItem
-                  key={asset.name}
-                  asset={asset}
-                  onPreview={() => setPreview(asset)}
-                  onRename={() => setRenaming(asset.name)}
-                  onDelete={() => prepareDelete(asset)}
-                />
-              ),
-            )}
-          </div>
+        {/* Below the shared folder sit the decks' own, so the shared states
+            size to their content there rather than filling the pane. */}
+        <div className={showDecks && visibleDecks.length > 0 ? undefined : 'h-full'}>
+          {loading ? (
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              {t.asset.loading}
+            </div>
+          ) : assets.length === 0 ? (
+            <EmptyState />
+          ) : visibleAssets.length === 0 ? (
+            <NoMatchingAssets onClear={clearFilters} />
+          ) : (
+            <div
+              className={cn(
+                'p-4 sm:p-6',
+                viewMode === 'grid'
+                  ? 'grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4 lg:grid-cols-[repeat(var(--asset-grid-columns),minmax(0,1fr))]'
+                  : 'flex flex-col gap-1',
+              )}
+              style={
+                viewMode === 'grid'
+                  ? ({ '--asset-grid-columns': gridColumns } as React.CSSProperties)
+                  : undefined
+              }
+            >
+              {viewMode === 'list' ? <AssetListHeader sort={sort} onSort={sortByColumn} /> : null}
+              {visibleAssets.map((asset) =>
+                renaming === asset.name ? (
+                  <RenameAsset
+                    key={asset.name}
+                    asset={asset}
+                    viewMode={viewMode}
+                    onCancel={() => setRenaming(null)}
+                    onSubmit={(next) => handleRename(asset, next)}
+                  />
+                ) : viewMode === 'grid' ? (
+                  <AssetCard
+                    key={asset.name}
+                    asset={asset}
+                    onPreview={() => setPreview(asset)}
+                    onRename={() => setRenaming(asset.name)}
+                    onDelete={() => prepareDelete(asset)}
+                  />
+                ) : (
+                  <AssetListItem
+                    key={asset.name}
+                    asset={asset}
+                    onPreview={() => setPreview(asset)}
+                    onRename={() => setRenaming(asset.name)}
+                    onDelete={() => prepareDelete(asset)}
+                  />
+                ),
+              )}
+            </div>
+          )}
+        </div>
+        {showDecks && visibleDecks.length > 0 && (
+          <DeckAssetGroups
+            decks={visibleDecks}
+            currentSlideId={slideId}
+            onOpenCurrent={() => setScope('slide')}
+          />
         )}
       </div>
 
@@ -675,6 +713,96 @@ function EmptyState() {
           {t.asset.noAssetsHintSuffix}
         </p>
       </div>
+    </div>
+  );
+}
+
+const MANAGE_IN_DECK_CLASS =
+  'inline-flex h-7 shrink-0 cursor-pointer items-center rounded-[5px] border border-border bg-card px-2.5 text-[12px] font-medium transition-colors hover:border-foreground/20 hover:bg-muted/60';
+
+// Read-only on purpose: rename, delete and copy-import all derive the path
+// from the view's scope, which would be wrong for another deck's file.
+function DeckAssetGroups({
+  decks,
+  currentSlideId,
+  onOpenCurrent,
+}: {
+  decks: DeckAssets[];
+  currentSlideId: string | null;
+  onOpenCurrent: () => void;
+}) {
+  const t = useLocale();
+  return (
+    <section
+      aria-label={t.asset.deckAssetsHeading}
+      className="border-t border-hairline px-4 py-5 sm:px-6"
+    >
+      <div className="mb-4">
+        <h2 className="eyebrow">{t.asset.deckAssetsHeading}</h2>
+        <p className="mt-1 text-[12px] text-muted-foreground">{t.asset.deckAssetsHint}</p>
+      </div>
+      <div className="flex flex-col gap-6">
+        {decks.map((deck) => (
+          <div key={deck.slideId}>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="min-w-0 truncate text-[12px] text-muted-foreground">
+                <span className="font-mono text-[11.5px] text-foreground">
+                  slides/{deck.slideId}/assets/
+                </span>
+                <span className="mx-2 opacity-50">·</span>
+                <span className="folio">
+                  {format(
+                    deck.assets.length === 1 ? t.asset.fileCount.one : t.asset.fileCount.other,
+                    { count: pad2(deck.assets.length) },
+                  )}
+                </span>
+              </p>
+              {deck.slideId === currentSlideId ? (
+                <button type="button" onClick={onOpenCurrent} className={MANAGE_IN_DECK_CLASS}>
+                  {t.asset.manageInDeck}
+                </button>
+              ) : (
+                <Link to={`/s/${deck.slideId}?view=assets`} className={MANAGE_IN_DECK_CLASS}>
+                  {t.asset.manageInDeck}
+                </Link>
+              )}
+            </div>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
+              {deck.assets.map((asset) => (
+                <DeckAssetTile key={asset.name} asset={asset} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DeckAssetTile({ asset }: { asset: AssetEntry }) {
+  const isImage = asset.mime.startsWith('image/');
+  return (
+    <div
+      className="flex flex-col overflow-hidden rounded-[6px] border border-border bg-card"
+      title={`${asset.name} · ${formatSize(asset.size)}`}
+    >
+      <div className="flex aspect-square w-full items-center justify-center overflow-hidden border-b border-hairline bg-[repeating-conic-gradient(theme(colors.muted)_0_25%,transparent_0_50%)] bg-[length:12px_12px]">
+        {isImage ? (
+          <img
+            src={asset.url}
+            alt=""
+            loading="lazy"
+            className="size-full object-contain"
+            draggable={false}
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+        ) : (
+          <FileIcon className="size-6 text-muted-foreground" />
+        )}
+      </div>
+      <div className="truncate px-1.5 py-1 text-[11px]">{asset.name}</div>
     </div>
   );
 }
