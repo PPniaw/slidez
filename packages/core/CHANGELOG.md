@@ -1,5 +1,19 @@
 # @open-slide/core
 
+## 2.8.0
+
+### Minor Changes
+
+- 1391322: Write and edit speaker notes right in the presenter window: an Edit button turns the notes into a text box that saves as you type, and an empty page explains this in plain words instead of pointing at the slide module. The live-interaction column collapses to a strip that counts new questions and comments, and the presenter window's labels, borders and text are larger, stronger and brighter.
+- 86e114a: Show a published deck's address next to the Publish button, with a copy button, and give the presenter window a live-interaction column beside the speaker notes when the deck has live interaction on.
+
+### Patch Changes
+
+- 382e3ef: Codex in the agent panel can now write only to the deck folders and assets, the same scope Claude gets without asking. It used to run with the whole project writable and never asked, so it could change files such as package.json. If your own `~/.codex/config.toml` sets `sandbox_mode`, Codex keeps using that setting instead.
+- 5d6dffb: The speaker-notes drawer under each slide is larger and easier to read: a taller bar with bigger text and icons, a clearly outlined collapse button, and a bigger text box. Secondary text across the app has more contrast in both light and dark themes.
+- 1bd436b: Published decks no longer carry speaker notes. `open-slide publish` empties the `notes` export in its staging copy before building, then scans the build and stops if any note text is still there. Your workspace keeps its notes. A presenter view opened from a published link explains that notes stay in the workspace. Decks published before this change still contain their notes until they are published again.
+- 644051b: Keep Vite's dependency cache in the workspace (`node_modules/.open-slide/vite`) instead of inside the installed package. A read-only install, such as a signed desktop app or a root-owned global install, no longer leaves the workspace on a blank page.
+
 ## 2.7.0
 
 ### Minor Changes
