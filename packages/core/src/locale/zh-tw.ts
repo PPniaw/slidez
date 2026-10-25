@@ -660,4 +660,17 @@ export const zhTW: Locale = {
     presenceThinking: '思考中',
     presenceWaiting: '等待你的回覆',
   },
+  report: {
+    action: '回報問題',
+    title: '回報問題給開發者',
+    description: '會把這次的錯誤資訊送給 slidez 開發者，協助找出原因。',
+    showDetails: '查看內容',
+    previewFailed: '無法產生錯誤資訊。',
+    send: '送出',
+    sending: '送出中…',
+    sent: '已送出，謝謝你的回報。',
+    failed: '回報沒有送出：',
+    tooMany: '今天送出的回報太多了，明天再試。',
+    unreachable: '連不上回報服務，請確認網路後再試一次。',
+  },
 };

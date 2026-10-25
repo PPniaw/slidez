@@ -38,6 +38,7 @@ import { textDiff } from '@/lib/text-diff';
 import { format, plural, useLocale } from '@/lib/use-locale';
 import { round2 } from '@/lib/utils';
 import type { Locale } from '../../../locale/types';
+import { openErrorReport } from '../error-report-dialog';
 import { AssetPickerDialog } from './asset-picker-dialog';
 import { ImageCropDialog, type ImageCropRect } from './image-crop-dialog';
 
@@ -1126,6 +1127,7 @@ export function InspectorProvider({
         baseRevRef.current = rev;
       }
       const failures: string[] = [];
+      const failed: Array<{ line: number; column: number; error?: string; ops: unknown }> = [];
       for (let i = 0; i < results.length; i++) {
         const item = pending[i];
         const r = results[i];
@@ -1143,11 +1145,21 @@ export function InspectorProvider({
           }
         } else {
           failures.push(saveFailureMessage(r.error, item.edit.line, t));
+          const { line, column, ops } = item.edit;
+          failed.push({ line, column, error: r.error, ops });
         }
       }
       refreshCount();
       if (failures.length > 0) {
-        toast.error(`${t.inspector.saveFailed} ${[...new Set(failures)].join(' ')}`);
+        const summary = `${t.inspector.saveFailed} ${[...new Set(failures)].join(' ')}`;
+        toast.error(summary, {
+          duration: 15_000,
+          action: {
+            label: t.report.action,
+            onClick: () =>
+              openErrorReport({ kind: 'save-failed', summary, slideId, failures: failed }),
+          },
+        });
       }
       return failures.length === 0;
     } catch (err) {
@@ -1156,14 +1168,21 @@ export function InspectorProvider({
         return false;
       }
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`${t.inspector.saveFailed} ${msg}`);
+      const summary = `${t.inspector.saveFailed} ${msg}`;
+      toast.error(summary, {
+        duration: 15_000,
+        action: {
+          label: t.report.action,
+          onClick: () => openErrorReport({ kind: 'save-failed', summary, slideId }),
+        },
+      });
       throw err;
     } finally {
       commitPromiseRef.current = null;
       setCommitting(false);
       history.clear();
     }
-  }, [applyEdits, clearPendingRev, history, markStale, refreshCount, t]);
+  }, [applyEdits, clearPendingRev, history, markStale, refreshCount, slideId, t]);
 
   const cancelEdits = useCallback(() => {
     if (pendingRef.current.size === 0) {

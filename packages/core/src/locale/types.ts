@@ -709,4 +709,19 @@ export type Locale = {
     presenceThinking: string;
     presenceWaiting: string;
   };
+  /** Sending an error report to the slidez developers from an error toast. */
+  report: {
+    action: string;
+    title: string;
+    description: string;
+    showDetails: string;
+    previewFailed: string;
+    send: string;
+    sending: string;
+    sent: string;
+    /** Prefix for the toast shown when the report could not be sent. */
+    failed: string;
+    tooMany: string;
+    unreachable: string;
+  };
 };

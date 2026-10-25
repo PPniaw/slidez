@@ -661,4 +661,17 @@ export const zhCN: Locale = {
     presenceThinking: '思考中',
     presenceWaiting: '等待你的回复',
   },
+  report: {
+    action: '反馈问题',
+    title: '向开发者反馈问题',
+    description: '会把这次的错误信息发送给 slidez 开发者，协助找出原因。',
+    showDetails: '查看内容',
+    previewFailed: '无法生成错误信息。',
+    send: '发送',
+    sending: '发送中…',
+    sent: '已发送，谢谢你的反馈。',
+    failed: '反馈没有发送：',
+    tooMany: '今天发送的反馈太多了，明天再试。',
+    unreachable: '连不上反馈服务，请确认网络后再试一次。',
+  },
 };

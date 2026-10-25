@@ -679,4 +679,17 @@ export const ja: Locale = {
     presenceThinking: '考え中',
     presenceWaiting: 'あなたの回答待ち',
   },
+  report: {
+    action: '報告する',
+    title: 'この問題を報告',
+    description: 'このエラーの情報を slidez の開発者に送り、原因の調査に役立てます。',
+    showDetails: '内容を見る',
+    previewFailed: 'エラー情報を作成できませんでした。',
+    send: '送信',
+    sending: '送信中…',
+    sent: '送信しました。ご報告ありがとうございます。',
+    failed: '報告を送信できませんでした:',
+    tooMany: '今日の報告数が上限に達しました。明日もう一度お試しください。',
+    unreachable: '報告サービスに接続できません。ネットワークを確認してもう一度お試しください。',
+  },
 };

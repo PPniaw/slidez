@@ -1,5 +1,6 @@
 import config from 'virtual:open-slide/config';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { ErrorReportDialog } from './components/error-report-dialog';
 import { Toaster } from './components/ui/sonner';
 import { TooltipProvider } from './components/ui/tooltip';
 import { LIVE_GLOBAL_KEY } from './lib/live/config';
@@ -40,6 +41,7 @@ export function App() {
         </Routes>
       </TooltipProvider>
       <Toaster />
+      {import.meta.env.DEV && <ErrorReportDialog />}
     </BrowserRouter>
   );
 }

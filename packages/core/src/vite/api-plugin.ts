@@ -7,6 +7,7 @@ import { registerEditRoutes } from './routes/edit.ts';
 import { registerFolderRoutes } from './routes/folders.ts';
 import { registerGfontsRoutes } from './routes/gfonts.ts';
 import { registerPublishRoutes } from './routes/publish.ts';
+import { registerReportRoutes } from './routes/report.ts';
 import { registerRestartRoutes } from './routes/restart.ts';
 import { registerSlideRoutes } from './routes/slides.ts';
 import { registerSvglRoutes } from './routes/svgl.ts';
@@ -34,6 +35,7 @@ export function apiPlugin(opts: ApiPluginOptions): Plugin {
       registerRestartRoutes(server);
       registerAgentRoutes(server, ctx);
       registerPublishRoutes(server, ctx);
+      registerReportRoutes(server, ctx);
     },
   };
 }

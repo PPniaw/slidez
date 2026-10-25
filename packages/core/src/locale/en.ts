@@ -678,4 +678,17 @@ export const en: Locale = {
     presenceThinking: 'Thinking',
     presenceWaiting: 'Waiting for you',
   },
+  report: {
+    action: 'Report',
+    title: 'Report this problem',
+    description: 'Sends the details of this error to the slidez developers to help find the cause.',
+    showDetails: 'Show details',
+    previewFailed: "Couldn't collect the error details.",
+    send: 'Send',
+    sending: 'Sending…',
+    sent: 'Sent. Thanks for reporting.',
+    failed: "Couldn't send the report:",
+    tooMany: 'Too many reports today. Try again tomorrow.',
+    unreachable: "Couldn't reach the report service. Check your connection and try again.",
+  },
 };

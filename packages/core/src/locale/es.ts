@@ -687,4 +687,19 @@ export const es: Locale = {
     presenceThinking: 'Pensando',
     presenceWaiting: 'Esperando tu respuesta',
   },
+  report: {
+    action: 'Informar',
+    title: 'Informar de este problema',
+    description:
+      'Envía los detalles de este error a los desarrolladores de slidez para ayudar a encontrar la causa.',
+    showDetails: 'Ver detalles',
+    previewFailed: 'No se pudieron reunir los detalles del error.',
+    send: 'Enviar',
+    sending: 'Enviando…',
+    sent: 'Enviado. Gracias por informar.',
+    failed: 'No se pudo enviar el informe:',
+    tooMany: 'Demasiados informes hoy. Inténtalo mañana.',
+    unreachable:
+      'No se pudo conectar con el servicio de informes. Revisa tu conexión e inténtalo de nuevo.',
+  },
 };
