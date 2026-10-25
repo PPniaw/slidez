@@ -311,6 +311,10 @@ export type Locale = {
     commentRegionNoTarget: string;
     /** Prefix for the toast shown when one or more buffered edits fail to write to disk. */
     saveFailed: string;
+    editErrorNoText: string;
+    editErrorTextChanged: string;
+    editErrorNoElement: string;
+    editErrorAmbiguous: string;
     staleLabel: string;
     staleTitle: string;
     staleDescription: string;

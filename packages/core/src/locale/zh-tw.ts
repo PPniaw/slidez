@@ -306,6 +306,10 @@ export const zhTW: Locale = {
     commentAddFailed: '無法新增留言：',
     commentRegionNoTarget: '找不到可以附加這個範圍的元件。',
     saveFailed: '儲存失敗：',
+    editErrorNoText: '有段文字是程式算出來的（例如來自變數），無法直接在畫面上改，可以請 AI 修改。',
+    editErrorTextChanged: '找不到原本的文字，簡報可能已被修改。請捨棄後重新編輯。',
+    editErrorNoElement: '找不到要修改的元素，簡報可能已被修改。請捨棄後重新編輯。',
+    editErrorAmbiguous: '這段文字在簡報裡不只出現一次，無法判斷要改哪一處，可以請 AI 修改。',
     staleLabel: '簡報已被修改，無法儲存',
     staleTitle: '簡報已被 AI 或其他程式修改',
     staleDescription:

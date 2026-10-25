@@ -37,6 +37,7 @@ import { slideChangeIncludes } from '@/lib/slides';
 import { textDiff } from '@/lib/text-diff';
 import { format, plural, useLocale } from '@/lib/use-locale';
 import { round2 } from '@/lib/utils';
+import type { Locale } from '../../../locale/types';
 import { AssetPickerDialog } from './asset-picker-dialog';
 import { ImageCropDialog, type ImageCropRect } from './image-crop-dialog';
 
@@ -441,6 +442,26 @@ export function useInspector(): InspectorCtx {
 
 export function useOptionalInspector(): InspectorCtx | null {
   return useContext(Ctx);
+}
+
+// The server answers with the editor's own reasons; say what they mean for
+// the person editing and what to do next. Unknown ones keep their detail.
+function saveFailureMessage(error: string | undefined, line: number, t: Locale): string {
+  switch (error) {
+    case 'element has no editable text':
+      return t.inspector.editErrorNoText;
+    case 'no text candidate matches the current value':
+    case 'an earlier edit for this text failed':
+      return t.inspector.editErrorTextChanged;
+    case 'no JSX element at location':
+    case 'target was removed by an earlier edit':
+      return t.inspector.editErrorNoElement;
+    case 'multiple text candidates share the same value; cannot disambiguate':
+    case 'element has multiple text candidates; missing prevText':
+      return t.inspector.editErrorAmbiguous;
+    default:
+      return `line ${line}: ${error ?? 'edit failed'};`;
+  }
 }
 
 export function InspectorProvider({
@@ -1121,11 +1142,13 @@ export function InspectorProvider({
             }
           }
         } else {
-          failures.push(`line ${item.edit.line}: ${r.error ?? 'edit failed'}`);
+          failures.push(saveFailureMessage(r.error, item.edit.line, t));
         }
       }
       refreshCount();
-      if (failures.length > 0) toast.error(`${t.inspector.saveFailed} ${failures.join('; ')}`);
+      if (failures.length > 0) {
+        toast.error(`${t.inspector.saveFailed} ${[...new Set(failures)].join(' ')}`);
+      }
       return failures.length === 0;
     } catch (err) {
       if (err instanceof StaleSourceError) {

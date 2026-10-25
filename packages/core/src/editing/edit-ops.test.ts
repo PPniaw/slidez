@@ -922,6 +922,102 @@ describe('applyEdit / set-text', () => {
     expect(r.error).toMatch(/no editable text/);
   });
 
+  describe('text forwarded through components', () => {
+    // Shaped like a real deck: a layout passes `title` on to `Title`, and a
+    // card renders two props in one element.
+    const deck = [
+      'function Title({ title }) {',
+      '  return <h2>{title}</h2>;',
+      '}',
+      'function Split({ title, children }) {',
+      '  return (',
+      '    <div>',
+      '      <Title title={title} />',
+      '      {children}',
+      '    </div>',
+      '  );',
+      '}',
+      'function Role({ organ, desc }) {',
+      '  return <p>{organ} {desc}</p>;',
+      '}',
+      'function Note({ desc }) {',
+      '  return <p>主治：{desc}</p>;',
+      '}',
+      'export default [',
+      '  () => (',
+      '    <Split title="體態管理經絡">',
+      '      <Role organ="肝" desc="疏泄情緒" />',
+      '      <Role organ="脾" desc="肌肉四肢" />',
+      '      <Note desc="消化" />',
+      '    </Split>',
+      '  ),',
+      '  () => <Split title="腸道營養" />,',
+      '];',
+      '',
+    ].join('\n');
+
+    const edit = (line: number, column: number, value: string, prevText: string) =>
+      applyEdit(deck, line, column, [{ kind: 'set-text', value, prevText }]);
+
+    it('follows a prop through every component it is passed on by', () => {
+      const r = edit(2, 9, '體態管理', '體態管理經絡');
+      if (!r.ok) throw new Error(`expected ok, got ${r.error}`);
+      expect(r.source).toContain('<Split title="體態管理">');
+      expect(r.source).toContain('<Split title="腸道營養" />');
+      expect(r.source).toContain('<Title title={title} />');
+      expect(r.source).toContain('return <h2>{title}</h2>;');
+    });
+
+    it('edits the one call that renders the text when an element mixes props', () => {
+      const r = edit(13, 9, '脾 肌肉四肢、代謝', '脾 肌肉四肢');
+      if (!r.ok) throw new Error(`expected ok, got ${r.error}`);
+      expect(r.source).toContain('<Role organ="脾" desc="肌肉四肢、代謝" />');
+      expect(r.source).toContain('<Role organ="肝" desc="疏泄情緒" />');
+      expect(r.source).toContain('return <p>{organ} {desc}</p>;');
+    });
+
+    it('leaves the literal alone when only the forwarded part changes', () => {
+      const r = edit(16, 9, '主治：消化、吸收', '主治：消化');
+      if (!r.ok) throw new Error(`expected ok, got ${r.error}`);
+      expect(r.source).toContain('<Note desc="消化、吸收" />');
+      expect(r.source).toContain('return <p>主治：{desc}</p>;');
+    });
+
+    it('follows children passed on as children', () => {
+      const src = [
+        'function Box({ children }) {',
+        '  return <div>{children}</div>;',
+        '}',
+        'function Card({ children }) {',
+        '  return <Box>{children}</Box>;',
+        '}',
+        'export default [() => <Card>Hello</Card>];',
+        '',
+      ].join('\n');
+      const r = applyEdit(src, 2, 9, [{ kind: 'set-text', value: 'Hi', prevText: 'Hello' }]);
+      if (!r.ok) throw new Error(`expected ok, got ${r.error}`);
+      expect(r.source).toContain('<Card>Hi</Card>');
+      expect(r.source).toContain('return <Box>{children}</Box>;');
+    });
+
+    it('refuses when two calls render the same text', () => {
+      const src = deck.replace('organ="脾" desc="肌肉四肢"', 'organ="肝" desc="疏泄情緒"');
+      const r = applyEdit(src, 13, 9, [
+        { kind: 'set-text', value: '肝 疏泄', prevText: '肝 疏泄情緒' },
+      ]);
+      expect(r.ok).toBe(false);
+      if (r.ok) throw new Error('expected failure');
+      expect(r.error).toMatch(/cannot disambiguate/);
+    });
+
+    it('refuses a text the file no longer holds', () => {
+      const r = edit(13, 9, '心 主血脈', '心 主血');
+      expect(r.ok).toBe(false);
+      if (r.ok) throw new Error('expected failure');
+      expect(r.error).toMatch(/no text candidate matches/);
+    });
+  });
+
   it('bails on a prop pass-through when the call site uses a non-literal value', () => {
     const src = [
       'const heading = "Hello";',

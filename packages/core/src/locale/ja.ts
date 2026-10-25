@@ -312,6 +312,14 @@ export const ja: Locale = {
     commentAddFailed: 'コメントを追加できませんでした：',
     commentRegionNoTarget: 'この範囲を付けられる要素が見つかりませんでした。',
     saveFailed: '保存に失敗しました:',
+    editErrorNoText:
+      'コードで計算されたテキスト（変数など）はスライド上で直接編集できません。エージェントに変更を依頼してください。',
+    editErrorTextChanged:
+      '元のテキストが見つかりません。スライドが変更された可能性があります。破棄してから編集し直してください。',
+    editErrorNoElement:
+      '編集する要素が見つかりません。スライドが変更された可能性があります。破棄してから編集し直してください。',
+    editErrorAmbiguous:
+      'このテキストは複数箇所にあるため、どれを変更するか判断できません。エージェントに変更を依頼してください。',
     staleLabel: 'スライドが変更されたため保存できません',
     staleTitle: 'スライドがエージェントまたは別のプログラムで変更されました',
     staleDescription:

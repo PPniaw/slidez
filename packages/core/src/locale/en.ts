@@ -309,6 +309,14 @@ export const en: Locale = {
     commentAddFailed: "Couldn't add comment:",
     commentRegionNoTarget: "Couldn't find an element to attach this region to.",
     saveFailed: "Couldn't save:",
+    editErrorNoText:
+      'Some text is computed in code (from a variable, for example) and can’t be edited on the slide. Ask the agent to change it.',
+    editErrorTextChanged:
+      'The original text is gone; the slide may have changed. Discard and edit again.',
+    editErrorNoElement:
+      'The element to edit is gone; the slide may have changed. Discard and edit again.',
+    editErrorAmbiguous:
+      'This text appears more than once, so it’s unclear which one to change. Ask the agent to change it.',
     staleLabel: 'Slide changed, can’t save',
     staleTitle: 'The slide was changed by the agent or another program',
     staleDescription:

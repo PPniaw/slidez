@@ -306,6 +306,11 @@ export const zhCN: Locale = {
     commentAddFailed: '无法添加评论：',
     commentRegionNoTarget: '找不到可以附加该区域的元素。',
     saveFailed: '保存失败：',
+    editErrorNoText:
+      '有段文字是程序计算出来的（例如来自变量），无法直接在画面上修改，请让 AI 修改。',
+    editErrorTextChanged: '找不到原来的文字，演示文稿可能已被修改。请放弃后重新编辑。',
+    editErrorNoElement: '找不到要修改的元素，演示文稿可能已被修改。请放弃后重新编辑。',
+    editErrorAmbiguous: '这段文字在演示文稿中不止出现一次，无法判断要改哪一处，请让 AI 修改。',
     staleLabel: '演示文稿已被修改，无法保存',
     staleTitle: '演示文稿已被 AI 或其他程序修改',
     staleDescription:

@@ -314,6 +314,14 @@ export const es: Locale = {
     commentAddFailed: 'No se pudo añadir el comentario:',
     commentRegionNoTarget: 'No se encontró un elemento al que asociar esta zona.',
     saveFailed: 'No se pudo guardar:',
+    editErrorNoText:
+      'Parte del texto se calcula en el código (por ejemplo, desde una variable) y no se puede editar en la diapositiva. Pide al agente que lo cambie.',
+    editErrorTextChanged:
+      'El texto original ya no está; puede que la diapositiva haya cambiado. Descarta y vuelve a editar.',
+    editErrorNoElement:
+      'El elemento ya no está; puede que la diapositiva haya cambiado. Descarta y vuelve a editar.',
+    editErrorAmbiguous:
+      'Este texto aparece más de una vez y no se sabe cuál cambiar. Pide al agente que lo cambie.',
     staleLabel: 'Diapositiva modificada, no se puede guardar',
     staleTitle: 'El agente u otro programa modificó la diapositiva',
     staleDescription:

@@ -350,7 +350,8 @@ type TextCandidate = {
 
 type JsxParent = t.JSXElement | t.JSXFragment;
 type TextRangeLeaf = {
-  node: t.JSXText | t.JSXExpressionContainer;
+  // A string literal is a prop value at a call site the text was forwarded from.
+  node: t.JSXText | t.JSXExpressionContainer | t.StringLiteral;
   parent: JsxParent;
   current: string;
   raw: string;
@@ -477,36 +478,41 @@ function collectTextRangeParts(element: JsxParent): TextRangePart[] {
   return normalizeTextRangeParts(parts);
 }
 
+// The part a literal child renders: JSX text, or a string/number in braces.
+// Undefined when the child is not a literal; null when it renders nothing.
+function literalTextPart(child: t.Node, element: JsxParent): TextRangeLeaf | null | undefined {
+  if (t.isJSXText(child)) {
+    const { text: current, offsets } = cleanJsxTextWithOffsets(child.value);
+    if (!current) return null;
+    return {
+      node: child,
+      parent: element,
+      current,
+      raw: child.value,
+      text: formatJsxText,
+      offsets,
+    };
+  }
+  if (!t.isJSXExpressionContainer(child)) return undefined;
+  const expression = child.expression;
+  if (!t.isStringLiteral(expression) && !t.isNumericLiteral(expression)) return undefined;
+  const current = String(expression.value);
+  if (!current) return null;
+  return {
+    node: child,
+    parent: element,
+    current,
+    raw: current,
+    text: (value) => `{${jsString(value)}}`,
+    offsets: Array.from({ length: current.length }, (_, i) => i),
+  };
+}
+
 function collectTextRangePartsRaw(element: JsxParent, out: TextRangePart[]): void {
   for (const child of element.children) {
-    if (t.isJSXText(child)) {
-      const { text: current, offsets } = cleanJsxTextWithOffsets(child.value);
-      if (current) {
-        out.push({
-          node: child,
-          parent: element,
-          current,
-          raw: child.value,
-          text: formatJsxText,
-          offsets,
-        });
-      }
-    } else if (t.isJSXExpressionContainer(child)) {
-      const expression = child.expression;
-      if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
-        const raw = String(expression.value);
-        const current = raw;
-        if (current) {
-          out.push({
-            node: child,
-            parent: element,
-            current,
-            raw,
-            text: (value) => `{${jsString(value)}}`,
-            offsets: Array.from({ length: current.length }, (_, i) => i),
-          });
-        }
-      }
+    const literal = literalTextPart(child, element);
+    if (literal !== undefined) {
+      if (literal) out.push(literal);
     } else if (isJsxBrElement(child)) {
       out.push({ node: child, current: '\n' });
     } else if (t.isJSXElement(child) || t.isJSXFragment(child)) {
@@ -819,47 +825,132 @@ function componentDestructuresProp(fn: EnclosingComponent['fn'], propName: strin
   return false;
 }
 
-function collectCallSiteCandidates(ast: t.Node, componentName: string): TextCandidate[] {
+// A literal a call site hands a component, with the source it sits in.
+type ForwardedLeaf = {
+  current: string;
+  node: t.JSXText | t.JSXExpressionContainer | t.StringLiteral;
+  text: (value: string) => string;
+};
+
+// Deep enough for any real wrapper chain; stops a component that renders itself.
+const MAX_FORWARD_DEPTH = 6;
+
+function expressionLeaf(
+  container: t.JSXExpressionContainer,
+  text: (value: string) => string,
+): ForwardedLeaf | { forward: string } | null {
+  const expr = container.expression;
+  if (t.isStringLiteral(expr) || t.isNumericLiteral(expr)) {
+    return { current: String(expr.value), node: container, text };
+  }
+  return t.isIdentifier(expr) ? { forward: expr.name } : null;
+}
+
+// What a call site passes for `prop`: a literal, an identifier it forwards
+// from its own component's props (`title={title}`), or null for anything else.
+function callSiteProp(
+  site: t.JSXElement,
+  prop: string,
+): ForwardedLeaf | { forward: string } | null {
+  if (prop === 'children') {
+    const meaningful = meaningfulChildren(site);
+    if (meaningful.length !== 1) return null;
+    const child = meaningful[0];
+    if (t.isJSXText(child))
+      return { current: child.value.trim(), node: child, text: formatJsxText };
+    return t.isJSXExpressionContainer(child)
+      ? expressionLeaf(child, (v) => `{${jsString(v)}}`)
+      : null;
+  }
+  const value = findJsxAttr(site.openingElement, prop)?.value;
+  if (!value) return null; // shorthand-true: not editable text.
+  if (t.isStringLiteral(value)) {
+    return { current: value.value, node: value, text: formatJsxAttrValue };
+  }
+  return t.isJSXExpressionContainer(value) ? expressionLeaf(value, formatJsxAttrValue) : null;
+}
+
+// One binding per way `props` reach `component`: each call site's literals,
+// and where a call site forwards a prop of its own component
+// (`<Title title={title} />` inside `Split`), each of that component's call
+// sites in turn, up to the literal the deck actually writes.
+function resolveForwardedProps(
+  ast: t.File,
+  component: string,
+  props: string[],
+  depth = 0,
+): Array<Map<string, ForwardedLeaf>> {
+  const out: Array<Map<string, ForwardedLeaf>> = [];
+  if (depth > MAX_FORWARD_DEPTH) return out;
+  walkJsx(ast, (site) => {
+    if (!t.isJSXElement(site)) return;
+    const name = site.openingElement.name;
+    if (!t.isJSXIdentifier(name) || name.name !== component) return;
+    const local = new Map<string, ForwardedLeaf>();
+    const forwarded = new Map<string, string>();
+    for (const prop of props) {
+      const value = callSiteProp(site, prop);
+      if (!value) return;
+      if ('forward' in value) forwarded.set(prop, value.forward);
+      else local.set(prop, value);
+    }
+    if (forwarded.size === 0) {
+      out.push(local);
+      return;
+    }
+    const outer = findEnclosingComponent(ast, site);
+    const names = [...new Set(forwarded.values())];
+    if (!outer || !names.every((n) => n === 'children' || componentDestructuresProp(outer.fn, n))) {
+      return;
+    }
+    for (const binding of resolveForwardedProps(ast, outer.name, names, depth + 1)) {
+      const merged = new Map(local);
+      for (const [prop, from] of forwarded) {
+        const leaf = binding.get(from);
+        if (leaf) merged.set(prop, leaf);
+      }
+      if (merged.size === props.length) out.push(merged);
+    }
+  });
+  return out;
+}
+
+function leafCandidate(leaf: ForwardedLeaf): TextCandidate {
+  return { current: leaf.current, splice: (v) => spliceRange(leaf.node, leaf.text(v)) };
+}
+
+function collectCallSiteCandidates(ast: t.File, componentName: string): TextCandidate[] {
   const out: TextCandidate[] = [];
   walkJsx(ast, (n) => {
     if (!t.isJSXElement(n)) return;
     const elName = n.openingElement.name;
-    if (t.isJSXIdentifier(elName) && elName.name === componentName) {
-      collectTextCandidates(n, out);
+    if (!t.isJSXIdentifier(elName) || elName.name !== componentName) return;
+    const before = out.length;
+    collectTextCandidates(n, out);
+    if (out.length > before) return;
+    // `<Wrap>{children}</Wrap>` inside another component: follow it up.
+    const passed = callSiteProp(n, 'children');
+    const outer = passed && 'forward' in passed ? findEnclosingComponent(ast, n) : null;
+    if (!passed || !('forward' in passed) || !outer) return;
+    const from = passed.forward;
+    if (from !== 'children' && !componentDestructuresProp(outer.fn, from)) return;
+    for (const binding of resolveForwardedProps(ast, outer.name, [from], 1)) {
+      const leaf = binding.get(from);
+      if (leaf) out.push(leafCandidate(leaf));
     }
   });
   return out;
 }
 
 function collectPropCallSiteCandidates(
-  ast: t.Node,
+  ast: t.File,
   componentName: string,
   propName: string,
 ): TextCandidate[] {
-  const out: TextCandidate[] = [];
-  walkJsx(ast, (n) => {
-    if (!t.isJSXElement(n)) return;
-    const elName = n.openingElement.name;
-    if (!t.isJSXIdentifier(elName) || elName.name !== componentName) return;
-    const attr = findJsxAttr(n.openingElement, propName);
-    if (!attr?.value) return; // shorthand-true: not editable text.
-    const v = attr.value;
-    if (t.isStringLiteral(v)) {
-      out.push({
-        current: v.value,
-        splice: (s) => spliceRange(v, formatJsxAttrValue(s)),
-      });
-    } else if (t.isJSXExpressionContainer(v)) {
-      const expr = v.expression;
-      if (t.isStringLiteral(expr) || t.isNumericLiteral(expr)) {
-        out.push({
-          current: String(expr.value),
-          splice: (s) => spliceRange(v, formatJsxAttrValue(s)),
-        });
-      }
-    }
+  return resolveForwardedProps(ast, componentName, [propName]).flatMap((binding) => {
+    const leaf = binding.get(propName);
+    return leaf ? [leafCandidate(leaf)] : [];
   });
-  return out;
 }
 
 // Smallest enclosing `arr.map((p) => …)` callback (or `.flatMap`) that
@@ -1015,6 +1106,91 @@ function elementTextCandidateMatches(
   return collectElementTextCandidates(ast, element).some((candidate) => candidate.current === norm);
 }
 
+function hasDynamicText(element: t.JSXElement): boolean {
+  return element.children.some(
+    (child) =>
+      t.isJSXExpressionContainer(child) &&
+      !t.isJSXEmptyExpression(child.expression) &&
+      !t.isStringLiteral(child.expression) &&
+      !t.isNumericLiteral(child.expression),
+  );
+}
+
+// The element's text for one way its component is called: its own literals
+// plus the props that call passes. Null when a child is neither.
+function forwardedTextParts(
+  element: t.JSXElement,
+  binding: Map<string, ForwardedLeaf>,
+): TextRangePart[] | null {
+  const out: TextRangePart[] = [];
+  for (const child of element.children) {
+    const literal = literalTextPart(child, element);
+    if (literal !== undefined) {
+      if (literal) out.push(literal);
+    } else if (isJsxBrElement(child)) {
+      out.push({ node: child, current: '\n' });
+    } else if (t.isJSXExpressionContainer(child) && t.isJSXEmptyExpression(child.expression)) {
+      // `{/* comment */}` renders nothing.
+    } else if (t.isJSXExpressionContainer(child) && t.isIdentifier(child.expression)) {
+      const leaf = binding.get(child.expression.name);
+      if (!leaf) return null;
+      if (!leaf.current) continue;
+      out.push({
+        ...leaf,
+        parent: element,
+        raw: leaf.current,
+        offsets: Array.from({ length: leaf.current.length }, (_, i) => i),
+      });
+    } else {
+      return null;
+    }
+  }
+  return normalizeTextRangeParts(out);
+}
+
+// `<p>{organ} {desc}</p>` inside a component: every call renders its own
+// mix of the element's literals and the props it passes. Find the one call
+// that renders `prevText` and rewrite what the edit touches there.
+function buildForwardedTextSplices(
+  ast: t.File,
+  element: t.JSXElement,
+  value: string,
+  prevText: string,
+): Splice[] | { error: string } | null {
+  if (value.includes('\n')) return null;
+  const names = new Set<string>();
+  for (const child of element.children) {
+    if (t.isJSXExpressionContainer(child) && t.isIdentifier(child.expression)) {
+      names.add(child.expression.name);
+    }
+  }
+  const enclosing = names.size > 0 ? findEnclosingComponent(ast, element) : null;
+  const props = [...names];
+  if (
+    !enclosing ||
+    !props.every((n) => n === 'children' || componentDestructuresProp(enclosing.fn, n))
+  ) {
+    return null;
+  }
+  const rendered = resolveForwardedProps(ast, enclosing.name, props).flatMap((binding) => {
+    const parts = forwardedTextParts(element, binding);
+    return parts ? [parts] : [];
+  });
+  if (rendered.length === 0) return null;
+  const matches = rendered.filter((parts) =>
+    textMatchesExpected(textRangeContent(parts), prevText),
+  );
+  if (matches.length === 0) return { error: 'no text candidate matches the current value' };
+  if (matches.length > 1) {
+    return { error: 'multiple text candidates share the same value; cannot disambiguate' };
+  }
+  const parts = matches[0];
+  const diff = textDiff(textRangeContent(parts), value);
+  if (diff.start === diff.end && diff.value === '') return [];
+  const splices = buildTextRangeReplaceSplices(parts, diff.start, diff.end, diff.value);
+  return 'error' in splices ? null : splices;
+}
+
 function buildTextSplice(
   ast: t.File,
   element: t.JSXElement,
@@ -1026,6 +1202,15 @@ function buildTextSplice(
     return { error: 'element has no editable text' };
   }
   if (candidates.length === 1) {
+    // `<p>主治：{desc}</p>`: the one literal is not the whole text, so
+    // writing the value over it would duplicate the dynamic part.
+    if (
+      prevText !== undefined &&
+      hasDynamicText(element) &&
+      candidates[0].current !== prevText.trim()
+    ) {
+      return { error: 'no text candidate matches the current value' };
+    }
     return candidates[0].splice(value);
   }
   if (prevText === undefined) {
@@ -1194,7 +1379,13 @@ export function planEdit(
     if ('error' in result) {
       if (op.prevText === undefined) return { ok: false, status: 422, error: result.error };
       const richResult = buildTextContentSplices(element, op.value, op.prevText);
-      if ('error' in richResult) return { ok: false, status: 422, error: result.error };
+      if ('error' in richResult) {
+        const forwarded = buildForwardedTextSplices(ast, element, op.value, op.prevText);
+        if (!forwarded) return { ok: false, status: 422, error: result.error };
+        if ('error' in forwarded) return { ok: false, status: 422, error: forwarded.error };
+        splices.push(...forwarded);
+        continue;
+      }
       splices.push(...richResult);
     } else {
       splices.push(result);
