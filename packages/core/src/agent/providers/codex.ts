@@ -162,6 +162,26 @@ export function createCodexMapper(emit: (event: ProviderEvent) => void) {
   };
 }
 
+const CODEX_PERMISSION_PROFILE = 'open-slide';
+
+// Fork: the same write scope Claude gets. `workspace-write` would let Codex
+// edit anything in the project (package.json, config) without asking, since
+// `codex exec` never asks. A permission profile keeps the project readable and
+// only the given roots writable. Passed as raw `--config` lines: the SDK's
+// structured `config` flattens it into dotted keys, which the CLI rejects. The
+// legacy `sandboxMode` must stay unset or Codex ignores the profile.
+export function codexPermissionOverrides(writableRoots: string[]): string[] {
+  const entries = [
+    '":minimal" = "read"',
+    '":workspace_roots" = { "." = "read" }',
+    ...writableRoots.map((root) => `${JSON.stringify(root)} = "write"`),
+  ];
+  return [
+    `default_permissions = ${JSON.stringify(CODEX_PERMISSION_PROFILE)}`,
+    `permissions.${CODEX_PERMISSION_PROFILE}.filesystem = { ${entries.join(', ')} }`,
+  ];
+}
+
 export function createCodexProvider(): AgentProvider {
   return {
     id: 'codex',
@@ -178,11 +198,13 @@ export function createCodexProvider(): AgentProvider {
       if (!sdk || typeof sdk.Codex !== 'function') throw new ProviderUnavailableError(this);
 
       const localCli = findSpawnableCli('codex');
-      const codex = new sdk.Codex(localCli ? { codexPathOverride: localCli } : {});
+      const codex = new sdk.Codex({
+        ...(localCli ? { codexPathOverride: localCli } : {}),
+        configOverrides: codexPermissionOverrides(opts.writableRoots),
+      });
       const threadOptions = {
         workingDirectory: opts.cwd,
         skipGitRepoCheck: true,
-        sandboxMode: 'workspace-write' as const,
         approvalPolicy: 'never' as const,
         ...(opts.model ? { model: opts.model } : {}),
         ...(opts.effort ? { modelReasoningEffort: opts.effort } : {}),

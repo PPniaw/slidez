@@ -81,7 +81,7 @@ export type ClaudeSdkModule = {
   }) => AsyncIterable<ClaudeSdkMessage>;
 };
 
-type CodexOptions = { codexPathOverride?: string };
+type CodexOptions = { codexPathOverride?: string; configOverrides?: string[] };
 
 type CodexThreadOptions = {
   workingDirectory?: string;

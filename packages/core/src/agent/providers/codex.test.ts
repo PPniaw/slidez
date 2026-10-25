@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ProviderEvent } from '../provider.ts';
-import { createCodexMapper, parseCodexModelsCache } from './codex.ts';
+import { codexPermissionOverrides, createCodexMapper, parseCodexModelsCache } from './codex.ts';
 import type { CodexThreadEvent } from './sdk-types.ts';
 
 function collect() {
@@ -148,5 +148,19 @@ describe('parseCodexModelsCache', () => {
     ]);
     expect(parseCodexModelsCache(null)).toEqual([]);
     expect(parseCodexModelsCache({ models: 'x' })).toEqual([]);
+  });
+});
+
+describe('codexPermissionOverrides', () => {
+  it('selects a profile that only writes inside the given roots', () => {
+    expect(codexPermissionOverrides(['/ws/slides', '/ws/assets'])).toEqual([
+      'default_permissions = "open-slide"',
+      'permissions.open-slide.filesystem = { ":minimal" = "read", ":workspace_roots" = { "." = "read" }, "/ws/slides" = "write", "/ws/assets" = "write" }',
+    ]);
+  });
+
+  it('quotes paths with spaces, quotes and non-ASCII names', () => {
+    const [, filesystem] = codexPermissionOverrides(['/Users/a b/測試 "x"/slides']);
+    expect(filesystem).toContain('"/Users/a b/測試 \\"x\\"/slides" = "write"');
   });
 });
