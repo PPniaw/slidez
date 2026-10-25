@@ -15,6 +15,8 @@ export type ApiContext = {
   agentEnabled: boolean;
   /** Live-interaction service the publish button opens rooms on. */
   liveServer?: string;
+  /** Whether an agent turn is writing to the deck; the agent routes set it. */
+  isAgentEditing: (slideId: string) => boolean;
 };
 
 export type ApiPluginOptions = {
@@ -42,6 +44,7 @@ export function makeContext(opts: ApiPluginOptions): ApiContext {
     coreVersion: opts.coreVersion,
     agentEnabled: opts.agentEnabled,
     liveServer: opts.liveServer,
+    isAgentEditing: () => false,
   };
 }
 

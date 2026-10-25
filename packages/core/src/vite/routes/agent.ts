@@ -187,6 +187,8 @@ export function registerAgentRoutes(server: ViteDevServer, ctx: ApiContext): voi
   const store = createSessionStore({
     file: path.join(ctx.userCwd, 'node_modules', '.open-slide', 'agent-sessions.json'),
   });
+  ctx.isAgentEditing = (slideId) =>
+    store.list().some((s) => s.slideId === slideId && s.status === 'running');
   // Agent output goes over its own stream rather than the HMR socket, which
   // every network client can subscribe to when the server runs with --host.
   const streams = new Set<ServerResponse>();

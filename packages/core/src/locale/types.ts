@@ -442,6 +442,20 @@ export type Locale = {
     fontPreviewSample: string;
     /** template: "Upload failed ({status})" */
     toastUploadFailed: string;
+    moveToShared: string;
+    moveToDeck: string;
+    movedToShared: string;
+    movedToDeck: string;
+    moveUndo: string;
+    moveDropHintShared: string;
+    moveDropHintDeck: string;
+    moveAgentRunning: string;
+    moveUnsupported: string;
+    moveUsedElsewhere: string;
+    moveConflictTitle: string;
+    moveConflictDescription: string;
+    moveConflictConfirm: string;
+    moveFailed: string;
     /** template: "Replaced {name}" */
     toastReplaced: string;
     /** template: "Uploaded as {name}" */

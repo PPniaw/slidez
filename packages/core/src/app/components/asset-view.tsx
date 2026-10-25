@@ -7,6 +7,7 @@ import {
   Columns3,
   File as FileIcon,
   FileImage,
+  FolderInput,
   ImageIcon,
   LayoutGrid,
   List,
@@ -59,6 +60,7 @@ import {
   sortAssets,
 } from '@/lib/asset-filter';
 import {
+  ASSET_DRAG_TYPE,
   type AssetEntry,
   type AssetUsage,
   type DeckAssets,
@@ -67,6 +69,8 @@ import {
   GLOBAL_ASSET_SCOPE,
   type GoogleFontItem,
   listAssetUsages,
+  type MoveAssetResponse,
+  moveAsset,
   renamedCopy,
   revertAssetUsage,
   type SvglItem,
@@ -164,6 +168,41 @@ function useGridColumns(): [number, (next: number) => void] {
   return [gridColumns, update];
 }
 
+type PendingMoveUndo = {
+  id: string;
+  at: number;
+  message: string;
+  name: string;
+  from: string;
+  to: string;
+  targetName?: string;
+};
+
+const MOVE_UNDO_STORAGE_KEY = 'open-slide:asset-move-undo';
+const MOVE_UNDO_TTL_MS = 30_000;
+
+function savePendingMoveUndo(undo: PendingMoveUndo) {
+  try {
+    window.sessionStorage.setItem(MOVE_UNDO_STORAGE_KEY, JSON.stringify(undo));
+  } catch {}
+}
+
+function clearPendingMoveUndo() {
+  try {
+    window.sessionStorage.removeItem(MOVE_UNDO_STORAGE_KEY);
+  } catch {}
+}
+
+function readPendingMoveUndo(): PendingMoveUndo | null {
+  try {
+    const raw = window.sessionStorage.getItem(MOVE_UNDO_STORAGE_KEY);
+    const undo = raw ? (JSON.parse(raw) as PendingMoveUndo) : null;
+    if (undo && Date.now() - undo.at < MOVE_UNDO_TTL_MS) return undo;
+    clearPendingMoveUndo();
+  } catch {}
+  return null;
+}
+
 type ConflictState = {
   file: File;
   resolve: (decision: 'replace' | 'rename' | 'cancel') => void;
@@ -173,7 +212,8 @@ export function AssetView({ slideId }: Props) {
   const lockedToGlobal = slideId === null;
   const [scope, setScope] = useState<Scope>(lockedToGlobal ? 'global' : 'slide');
   const effectiveSlideId = scope === 'global' || slideId === null ? GLOBAL_ASSET_SCOPE : slideId;
-  const { assets, loading, available, upload, rename, remove } = useAssets(effectiveSlideId);
+  const { assets, loading, available, upload, rename, remove, refresh } =
+    useAssets(effectiveSlideId);
   // Opening another deck's assets lands on its own tab, not on the shared one
   // this view was showing.
   useEffect(() => {
@@ -230,6 +270,156 @@ export function AssetView({ slideId }: Props) {
     [decks, deferredQuery, sort.direction, sort.key, typeFilter, usageFilter],
   );
   const existingNames = useMemo(() => new Set(assets.map((asset) => asset.name)), [assets]);
+
+  // Moving crosses between this deck and the shared folder, so it needs a
+  // deck on the other side: none on the standalone assets page.
+  const moveTarget: Scope = scope === 'slide' ? 'global' : 'slide';
+  const [draggingAsset, setDraggingAsset] = useState(false);
+  const [dropTarget, setDropTarget] = useState<Scope | null>(null);
+  const [moveConflict, setMoveConflict] = useState<{
+    asset: AssetEntry;
+    existing: string;
+    suggestedName: string;
+  } | null>(null);
+
+  async function handleMove(
+    name: string,
+    from: string,
+    to: string,
+    targetName?: string,
+    undoName?: string,
+  ): Promise<void> {
+    let res: MoveAssetResponse;
+    try {
+      res = await moveAsset(from, name, to, targetName);
+    } catch {
+      toast.error(format(t.asset.moveFailed, { status: 0 }));
+      return;
+    }
+    if (res.ok) {
+      await refresh();
+      const message = to === GLOBAL_ASSET_SCOPE ? t.asset.movedToShared : t.asset.movedToDeck;
+      // Undo moves it back under the name it had, whatever a conflict made it.
+      const original = undoName ?? name;
+      const undo: PendingMoveUndo = {
+        id: `asset-move-${Date.now()}`,
+        at: Date.now(),
+        message: format(message, { path: res.importPath }),
+        name: res.name,
+        from: to,
+        to: from,
+        targetName: original === res.name ? undefined : original,
+      };
+      savePendingMoveUndo(undo);
+      showMoveUndo(undo);
+      return;
+    }
+    if (res.error === 'conflict') {
+      const asset = [...assets, ...decks.flatMap((d) => d.assets)].find((a) => a.name === name);
+      if (asset) {
+        setMoveConflict({ asset, existing: res.existing, suggestedName: res.suggestedName });
+      }
+      return;
+    }
+    if (res.error === 'agent-running') {
+      toast.error(t.asset.moveAgentRunning);
+      return;
+    }
+    if (res.error === 'unsupported-reference' || res.error === 'used-elsewhere') {
+      const where = res.locations
+        .slice(0, 3)
+        .map((l) => `${l.file}:${l.line}`)
+        .join(', ');
+      const template =
+        res.error === 'used-elsewhere' ? t.asset.moveUsedElsewhere : t.asset.moveUnsupported;
+      toast.error(format(template, { locations: where }), { duration: 10_000 });
+      return;
+    }
+    toast.error(format(t.asset.moveFailed, { status: res.status }));
+  }
+
+  // The rewritten deck can reload the page, so the undo is kept in session
+  // storage and offered again once the view mounts.
+  function showMoveUndo(undo: PendingMoveUndo) {
+    toast.success(undo.message, {
+      id: undo.id,
+      duration: 10_000,
+      action: {
+        label: t.asset.moveUndo,
+        onClick: () => {
+          clearPendingMoveUndo();
+          void handleMove(undo.name, undo.from, undo.to, undo.targetName);
+        },
+      },
+      onDismiss: clearPendingMoveUndo,
+      onAutoClose: clearPendingMoveUndo,
+    });
+  }
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: offered once per mount
+  useEffect(() => {
+    const undo = readPendingMoveUndo();
+    if (undo) showMoveUndo(undo);
+  }, []);
+
+  const moveAssetAcross = (asset: AssetEntry, targetName?: string) => {
+    if (slideId === null) return;
+    const from = scope === 'slide' ? slideId : GLOBAL_ASSET_SCOPE;
+    const to = scope === 'slide' ? GLOBAL_ASSET_SCOPE : slideId;
+    void handleMove(asset.name, from, to, targetName, targetName ? asset.name : undefined);
+  };
+
+  const assetMove = (asset: AssetEntry): AssetMove | undefined =>
+    slideId === null
+      ? undefined
+      : {
+          label: scope === 'slide' ? t.asset.moveToShared : t.asset.moveToDeck,
+          onMove: () => moveAssetAcross(asset),
+          onDragStart: (event) => {
+            event.dataTransfer.setData(ASSET_DRAG_TYPE, asset.name);
+            event.dataTransfer.effectAllowed = 'move';
+            setDraggingAsset(true);
+          },
+          onDragEnd: () => {
+            setDraggingAsset(false);
+            setDropTarget(null);
+          },
+        };
+
+  // The other tab takes the drop. A tile drag carries no `Files`, so the
+  // upload drop zone around the view leaves it alone.
+  const isAssetDrag = (event: React.DragEvent) =>
+    Array.from(event.dataTransfer.types).includes(ASSET_DRAG_TYPE);
+  const tabDropProps = (target: Scope) =>
+    target !== moveTarget
+      ? {}
+      : {
+          onDragOver: (event: React.DragEvent) => {
+            if (!isAssetDrag(event)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            setDropTarget(target);
+          },
+          onDragLeave: () => setDropTarget(null),
+          onDrop: (event: React.DragEvent) => {
+            if (!isAssetDrag(event)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            setDropTarget(null);
+            setDraggingAsset(false);
+            const asset = assets.find(
+              (a) => a.name === event.dataTransfer.getData(ASSET_DRAG_TYPE),
+            );
+            if (asset) moveAssetAcross(asset);
+          },
+        };
+  const dropHighlight = (target: Scope) =>
+    target === moveTarget && draggingAsset
+      ? cn(
+          'outline-dashed outline-1 outline-brand/60',
+          dropTarget === target && 'bg-brand/10 text-foreground outline-brand',
+        )
+      : undefined;
 
   const clearFilters = () => {
     setQuery('');
@@ -360,8 +550,20 @@ export function AssetView({ slideId }: Props) {
           ) : (
             <Tabs value={scope} onValueChange={(next) => setScope(next as Scope)}>
               <TabsList>
-                <TabsTrigger value="slide">{t.asset.scopeSlide}</TabsTrigger>
-                <TabsTrigger value="global">{t.asset.scopeGlobal}</TabsTrigger>
+                <TabsTrigger
+                  value="slide"
+                  className={dropHighlight('slide')}
+                  {...tabDropProps('slide')}
+                >
+                  {t.asset.scopeSlide}
+                </TabsTrigger>
+                <TabsTrigger
+                  value="global"
+                  className={dropHighlight('global')}
+                  {...tabDropProps('global')}
+                >
+                  {t.asset.scopeGlobal}
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           )}
@@ -369,15 +571,24 @@ export function AssetView({ slideId }: Props) {
             <span className="font-mono text-[11.5px]">
               {scope === 'global' ? 'assets/' : `slides/${slideId}/assets/`}
             </span>
-            {!loading && (
+            {draggingAsset ? (
               <>
                 <span className="mx-2 opacity-50">·</span>
-                <span className="folio">
-                  {format(assets.length === 1 ? t.asset.fileCount.one : t.asset.fileCount.other, {
-                    count: pad2(assets.length),
-                  })}
+                <span className="text-brand">
+                  {moveTarget === 'global' ? t.asset.moveDropHintShared : t.asset.moveDropHintDeck}
                 </span>
               </>
+            ) : (
+              !loading && (
+                <>
+                  <span className="mx-2 opacity-50">·</span>
+                  <span className="folio">
+                    {format(assets.length === 1 ? t.asset.fileCount.one : t.asset.fileCount.other, {
+                      count: pad2(assets.length),
+                    })}
+                  </span>
+                </>
+              )
             )}
           </p>
         </div>
@@ -579,6 +790,7 @@ export function AssetView({ slideId }: Props) {
                     onPreview={() => setPreview(asset)}
                     onRename={() => setRenaming(asset.name)}
                     onDelete={() => prepareDelete(asset)}
+                    move={assetMove(asset)}
                   />
                 ) : (
                   <AssetListItem
@@ -587,6 +799,7 @@ export function AssetView({ slideId }: Props) {
                     onPreview={() => setPreview(asset)}
                     onRename={() => setRenaming(asset.name)}
                     onDelete={() => prepareDelete(asset)}
+                    move={assetMove(asset)}
                   />
                 ),
               )}
@@ -624,6 +837,18 @@ export function AssetView({ slideId }: Props) {
           </div>
         </div>
       </div>
+
+      {moveConflict && (
+        <MoveConflictDialog
+          existing={moveConflict.existing}
+          suggestedName={moveConflict.suggestedName}
+          onCancel={() => setMoveConflict(null)}
+          onConfirm={() => {
+            moveAssetAcross(moveConflict.asset, moveConflict.suggestedName);
+            setMoveConflict(null);
+          }}
+        />
+      )}
 
       {conflict && (
         <ConflictDialog
@@ -1013,16 +1238,24 @@ function AssetCard({
   onPreview,
   onRename,
   onDelete,
+  move,
 }: {
   asset: AssetEntry;
   onPreview: () => void;
   onRename: () => void;
   onDelete: () => void;
+  move?: AssetMove;
 }) {
   const isImage = asset.mime.startsWith('image/');
   const t = useLocale();
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-[6px] border border-border bg-card shadow-edge transition-[box-shadow,scale] duration-150 hover:shadow-floating motion-safe:active:scale-[0.99] focus-within:ring-2 focus-within:ring-ring/30">
+    // biome-ignore lint/a11y/noStaticElementInteractions: drag source wraps the tile's buttons; the menu offers the same move
+    <div
+      draggable={move !== undefined}
+      onDragStart={move?.onDragStart}
+      onDragEnd={move?.onDragEnd}
+      className="group relative flex flex-col overflow-hidden rounded-[6px] border border-border bg-card shadow-edge transition-[box-shadow,scale] duration-150 hover:shadow-floating motion-safe:active:scale-[0.99] focus-within:ring-2 focus-within:ring-ring/30"
+    >
       <button
         type="button"
         onClick={onPreview}
@@ -1064,7 +1297,13 @@ function AssetCard({
             </time>
           </div>
         </div>
-        <AssetActions asset={asset} onPreview={onPreview} onRename={onRename} onDelete={onDelete} />
+        <AssetActions
+          asset={asset}
+          onPreview={onPreview}
+          onRename={onRename}
+          onDelete={onDelete}
+          move={move}
+        />
       </div>
     </div>
   );
@@ -1075,16 +1314,24 @@ function AssetListItem({
   onPreview,
   onRename,
   onDelete,
+  move,
 }: {
   asset: AssetEntry;
   onPreview: () => void;
   onRename: () => void;
   onDelete: () => void;
+  move?: AssetMove;
 }) {
   const isImage = asset.mime.startsWith('image/');
   const t = useLocale();
   return (
-    <div className="group flex min-h-14 items-center gap-3 rounded-[6px] border border-border bg-card p-2 shadow-edge transition-[box-shadow,scale] duration-150 hover:shadow-floating motion-safe:active:scale-[0.995] focus-within:ring-2 focus-within:ring-ring/30">
+    // biome-ignore lint/a11y/noStaticElementInteractions: drag source wraps the tile's buttons; the menu offers the same move
+    <div
+      draggable={move !== undefined}
+      onDragStart={move?.onDragStart}
+      onDragEnd={move?.onDragEnd}
+      className="group flex min-h-14 items-center gap-3 rounded-[6px] border border-border bg-card p-2 shadow-edge transition-[box-shadow,scale] duration-150 hover:shadow-floating motion-safe:active:scale-[0.995] focus-within:ring-2 focus-within:ring-ring/30"
+    >
       <button
         type="button"
         onClick={onPreview}
@@ -1138,21 +1385,36 @@ function AssetListItem({
       <div className="hidden w-16 shrink-0 justify-end sm:flex">
         <UsageBadge unused={asset.unused} showUsed />
       </div>
-      <AssetActions asset={asset} onPreview={onPreview} onRename={onRename} onDelete={onDelete} />
+      <AssetActions
+        asset={asset}
+        onPreview={onPreview}
+        onRename={onRename}
+        onDelete={onDelete}
+        move={move}
+      />
     </div>
   );
 }
+
+type AssetMove = {
+  label: string;
+  onMove: () => void;
+  onDragStart: (event: React.DragEvent) => void;
+  onDragEnd: () => void;
+};
 
 function AssetActions({
   asset,
   onPreview,
   onRename,
   onDelete,
+  move,
 }: {
   asset: AssetEntry;
   onPreview: () => void;
   onRename: () => void;
   onDelete: () => void;
+  move?: AssetMove;
 }) {
   const t = useLocale();
   return (
@@ -1176,6 +1438,12 @@ function AssetActions({
           <Pencil />
           {t.asset.renameMenuItem}
         </DropdownMenuItem>
+        {move && (
+          <DropdownMenuItem onClick={move.onMove}>
+            <FolderInput />
+            {move.label}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onClick={onDelete}>
           <Trash2 />
           {t.asset.deleteMenuItem}
@@ -1378,6 +1646,38 @@ function ConflictDialog({
             {t.asset.conflictRenameCopy}
           </Button>
           <Button onClick={() => onChoose('replace')}>{t.asset.conflictReplace}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MoveConflictDialog({
+  existing,
+  suggestedName,
+  onCancel,
+  onConfirm,
+}: {
+  existing: string;
+  suggestedName: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const t = useLocale();
+  return (
+    <Dialog open onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t.asset.moveConflictTitle}</DialogTitle>
+          <DialogDescription>
+            {format(t.asset.moveConflictDescription, { existing, name: suggestedName })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>
+            {t.common.cancel}
+          </Button>
+          <Button onClick={onConfirm}>{t.asset.moveConflictConfirm}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

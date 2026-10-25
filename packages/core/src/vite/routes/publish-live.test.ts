@@ -32,6 +32,7 @@ async function makeCtx(liveServerUrl?: string): Promise<ApiContext> {
     coreVersion: '0.0.0',
     agentEnabled: false,
     liveServer: liveServerUrl,
+    isAgentEditing: () => false,
   };
 }
 

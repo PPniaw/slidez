@@ -50,6 +50,45 @@ async function deleteAsset(slideId: string, name: string): Promise<Response> {
   return fetch(`/__assets/${slideId}/${encodeURIComponent(name)}`, { method: 'DELETE' });
 }
 
+/** The drag payload of an asset tile: its name, moved within this view. */
+export const ASSET_DRAG_TYPE = 'application/x-open-slide-asset';
+
+export type MoveAssetResponse =
+  | {
+      ok: true;
+      name: string;
+      to: string;
+      importPath: string;
+      deduped: boolean;
+      rewritten: Array<{ file: string; count: number }>;
+    }
+  | { ok: false; status: number; error: 'conflict'; existing: string; suggestedName: string }
+  | {
+      ok: false;
+      status: number;
+      error: 'unsupported-reference' | 'used-elsewhere';
+      locations: Array<{ file: string; line: number; snippet: string }>;
+    }
+  | { ok: false; status: number; error: 'agent-running' | 'not-found' | 'invalid' | 'failed' };
+
+/** Moves an asset between a deck and the shared folder, rewriting the deck's imports. */
+export async function moveAsset(
+  from: string,
+  name: string,
+  to: string,
+  targetName?: string,
+): Promise<MoveAssetResponse> {
+  const res = await fetch(`/__assets/${from}/${encodeURIComponent(name)}/move`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ to, ...(targetName ? { targetName } : {}) }),
+  });
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (res.ok) return { ...data, ok: true } as MoveAssetResponse;
+  const error = typeof data.error === 'string' ? data.error : 'failed';
+  return { ...data, ok: false, status: res.status, error } as MoveAssetResponse;
+}
+
 export type AssetUsage = { slideId: string; count: number };
 
 export async function listAssetUsages(slideId: string, name: string): Promise<AssetUsage[]> {

@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ViteDevServer } from 'vite';
+import { moveAsset } from '../../editing/move-asset.ts';
 import { findAssetUsages, findReferencedAssets } from '../../editing/revert-asset.ts';
 import { resolveSlideEntry, SLIDE_ID_RE } from '../../editing/slide-ops.ts';
 import {
@@ -21,6 +22,7 @@ import { type ApiContext, json, readBody } from './context.ts';
 // PATCH  /__assets/:scope/:file               rename { name }
 // DELETE /__assets/:scope/:file               delete
 // GET    /__assets/:scope/:file/usages        count <img src={import}> references
+// POST   /__assets/:scope/:file/move          move between a deck and @global { to, targetName? }
 
 export function registerAssetRoutes(server: ViteDevServer, ctx: ApiContext): void {
   server.middlewares.use('/__assets', async (req, res, next) => {
@@ -31,6 +33,27 @@ export function registerAssetRoutes(server: ViteDevServer, ctx: ApiContext): voi
       const listMatch = url.pathname.match(/^\/([^/]+)\/?$/);
       const fileMatch = url.pathname.match(/^\/([^/]+)\/([^/]+)$/);
       const usagesMatch = url.pathname.match(/^\/([^/]+)\/([^/]+)\/usages$/);
+      const moveMatch = url.pathname.match(/^\/([^/]+)\/([^/]+)\/move$/);
+
+      if (moveMatch && method === 'POST') {
+        const requestCheck = validateMutationRequest(req, { requireJsonBody: true });
+        if (!requestCheck.ok) {
+          return json(res, requestCheck.status, { error: requestCheck.error });
+        }
+        const body = (await readBody(req)) as { to?: unknown; targetName?: unknown };
+        if (typeof body.to !== 'string') return json(res, 400, { error: 'invalid' });
+        const result = await moveAsset({
+          slidesRoot: ctx.slidesRoot,
+          globalAssetsRoot: ctx.globalAssetsRoot,
+          from: moveMatch[1],
+          name: decodeURIComponent(moveMatch[2]),
+          to: body.to,
+          targetName: typeof body.targetName === 'string' ? body.targetName : undefined,
+          isAgentEditing: ctx.isAgentEditing,
+        });
+        const { ok: _ok, ...payload } = result;
+        return json(res, result.ok ? 200 : result.status, payload);
+      }
 
       if (usagesMatch && method === 'GET') {
         const scope = usagesMatch[1];
