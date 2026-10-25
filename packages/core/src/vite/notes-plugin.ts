@@ -143,6 +143,60 @@ export function applyNotesEdit(source: string, index: number, text: string): App
   return { ok: true, source: next };
 }
 
+export type StrippedNotes = { source: string; texts: string[] };
+
+// Fork: published decks are public, and speaker notes are for the speaker.
+// Empty every top-level binding the module exports as `notes` (directly or via
+// `export { x as notes }`) so the build carries none of their text. The
+// binding stays, as `[]`, in case the module reads it elsewhere. Returns the
+// literal note texts too, so the caller can check the build for leftovers.
+// Null when the source doesn't parse, so nothing half-edited gets built.
+export function stripNotes(source: string): StrippedNotes | null {
+  const ast = parseSource(source);
+  if (!ast) return null;
+
+  const exported = new Set<string>();
+  for (const stmt of ast.program.body) {
+    if (!t.isExportNamedDeclaration(stmt) || stmt.source) continue;
+    if (t.isVariableDeclaration(stmt.declaration)) {
+      for (const d of stmt.declaration.declarations) {
+        if (t.isIdentifier(d.id) && d.id.name === 'notes') exported.add('notes');
+      }
+    }
+    for (const spec of stmt.specifiers) {
+      if (!t.isExportSpecifier(spec)) continue;
+      const name = t.isIdentifier(spec.exported) ? spec.exported.name : spec.exported.value;
+      if (name === 'notes') exported.add(spec.local.name);
+    }
+  }
+  if (exported.size === 0) return { source, texts: [] };
+
+  const ranges: { start: number; end: number }[] = [];
+  const texts: string[] = [];
+  for (const stmt of ast.program.body) {
+    const decl = t.isExportNamedDeclaration(stmt) ? stmt.declaration : stmt;
+    if (!t.isVariableDeclaration(decl)) continue;
+    for (const d of decl.declarations) {
+      if (!t.isIdentifier(d.id) || !exported.has(d.id.name) || !d.init) continue;
+      if (typeof d.init.start !== 'number' || typeof d.init.end !== 'number') continue;
+      ranges.push({ start: d.init.start, end: d.init.end });
+      if (!t.isArrayExpression(d.init)) continue;
+      for (const el of d.init.elements) {
+        if (t.isStringLiteral(el)) texts.push(el.value);
+        else if (t.isTemplateLiteral(el) && el.expressions.length === 0) {
+          texts.push(el.quasis.map((q) => q.value.cooked ?? q.value.raw).join(''));
+        }
+      }
+    }
+  }
+
+  let next = source;
+  for (const { start, end } of ranges.sort((a, b) => b.start - a.start)) {
+    next = `${next.slice(0, start)}[]${next.slice(end)}`;
+  }
+  return { source: next, texts };
+}
+
 export type NotesPluginOptions = {
   userCwd: string;
   slidesDir?: string;

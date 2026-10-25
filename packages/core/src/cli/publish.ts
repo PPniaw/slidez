@@ -11,6 +11,7 @@ import {
   writeManifest,
 } from '../files/folders.ts';
 import { createViteConfig } from '../vite/config.ts';
+import { stripNotes } from '../vite/notes-plugin.ts';
 import { loadUserConfig } from '../vite/open-slide-plugin.ts';
 import { PUBLISHED_LABEL, resolveProjectName } from './publish-names.ts';
 import { createCliLogger, glyph, printHeader } from './ui.ts';
@@ -56,6 +57,56 @@ export function findLeakedDecks(
     const re = new RegExp(`(^|[^A-Za-z0-9_-])${escaped}([^A-Za-z0-9_-]|$)`);
     const hit = files.find((f) => re.test(f.text));
     if (hit) leaks.push({ id, file: hit.name });
+  }
+  return leaks;
+}
+
+// Speaker notes are stripped from the staged decks before the build. Every
+// module under a deck is checked, since a deck may keep its notes in a file of
+// their own. A module that doesn't parse stops the publish rather than going
+// up with its notes intact.
+export async function stripStagedNotes(stagingSlides: string, ids: string[]): Promise<string[]> {
+  const texts: string[] = [];
+  for (const id of ids) {
+    const files = await fg('**/*.{tsx,jsx,ts,js}', {
+      cwd: path.join(stagingSlides, id),
+      onlyFiles: true,
+      absolute: true,
+    });
+    for (const file of files) {
+      const source = await readFile(file, 'utf8');
+      if (!/\bnotes\b/.test(source)) continue;
+      const stripped = stripNotes(source);
+      if (!stripped) {
+        throw new Error(
+          `無法解析 ${path.relative(stagingSlides, file)}，沒辦法拿掉講稿，已中止發布。`,
+        );
+      }
+      if (stripped.source !== source) await writeFile(file, stripped.source);
+      texts.push(...stripped.texts);
+    }
+  }
+  return texts;
+}
+
+// A note counts as leaked when a line of it shows up verbatim in the build.
+// Short lines are skipped: a note that repeats a slide title would otherwise
+// flag the slide itself. Lines with quotes or backslashes are escaped in the
+// bundle, so they can't be matched as written.
+export function findLeakedNotes(
+  files: { name: string; text: string }[],
+  notes: string[],
+): { line: string; file: string }[] {
+  const leaks: { line: string; file: string }[] = [];
+  const lines = new Set(
+    notes
+      .flatMap((n) => n.split('\n'))
+      .map((l) => l.trim())
+      .filter((l) => l.length >= 20 && !/["'`\\]/.test(l)),
+  );
+  for (const line of lines) {
+    const hit = files.find((f) => f.text.includes(line));
+    if (hit) leaks.push({ line, file: hit.name });
   }
   return leaks;
 }
@@ -160,6 +211,7 @@ export async function publish(ids: string[], opts: PublishOptions = {}): Promise
   for (const id of ids) {
     await cp(path.join(slidesAbs, id), path.join(stagingSlides, id), { recursive: true });
   }
+  const notes = await stripStagedNotes(stagingSlides, ids);
   const manifest = await readManifest(foldersManifestPath(slidesAbs));
   await writeManifest(foldersManifestPath(stagingSlides), filterFolders(manifest, ids));
 
@@ -207,6 +259,12 @@ export async function publish(ids: string[], opts: PublishOptions = {}): Promise
   process.stdout.write(
     `  ${chalk.green('✔')} 打包結果只包含：${ids.join(', ')}（已檢查 ${excluded.length} 份未指定的簡報）\n`,
   );
+  const leakedNotes = findLeakedNotes(files, notes);
+  if (leakedNotes.length > 0) {
+    const list = leakedNotes.map((l) => `「${l.line}」（在 ${l.file}）`).join('\n    ');
+    throw new Error(`打包結果裡還有講稿，已中止發布：\n    ${list}`);
+  }
+  process.stdout.write(`  ${chalk.green('✔')} 已拿掉講稿，公開網址看不到\n`);
 
   await mkdir(deployDir, { recursive: true });
   for (const entry of await readdir(deployDir)) {

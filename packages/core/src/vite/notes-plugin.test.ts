@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyNotesEdit, renderNoteLiteral } from './notes-plugin.ts';
+import { applyNotesEdit, renderNoteLiteral, stripNotes } from './notes-plugin.ts';
 import { hasRecentWrite, RECENT_WRITE_WINDOW_MS, recordWrite } from './recent-writes.ts';
 
 describe('renderNoteLiteral', () => {
@@ -161,5 +161,44 @@ describe('recent-writes window', () => {
     expect(hasRecentWrite(file, now + RECENT_WRITE_WINDOW_MS)).toBe(false);
     // The expired entry is pruned, so a subsequent check stays false too.
     expect(hasRecentWrite(file, now + RECENT_WRITE_WINDOW_MS + 5_000)).toBe(false);
+  });
+});
+
+describe('stripNotes', () => {
+  it('empties an exported notes array and returns its texts', () => {
+    const source = [
+      'export default [Cover] satisfies Page[];',
+      'export const notes: (string | undefined)[] = [',
+      "  'Open with the launch date',",
+      '  undefined,',
+      '  `Second line',
+      'of the closing note`,',
+      '];',
+      '',
+    ].join('\n');
+    const out = stripNotes(source);
+    expect(out?.source).toContain('export const notes: (string | undefined)[] = [];');
+    expect(out?.source).not.toContain('launch date');
+    expect(out?.texts).toEqual(['Open with the launch date', 'Second line\nof the closing note']);
+  });
+
+  it('follows `export { x as notes }` to the local binding', () => {
+    const source =
+      "const speaker = ['Mention the pilot customers'];\nexport { speaker as notes };\n";
+    const out = stripNotes(source);
+    expect(out?.source).toBe('const speaker = [];\nexport { speaker as notes };\n');
+    expect(out?.texts).toEqual(['Mention the pilot customers']);
+  });
+
+  it('empties notes built by an expression too, without texts to check', () => {
+    const out = stripNotes("export const notes = ['a', 'b'].map((s) => s.toUpperCase());\n");
+    expect(out?.source).toBe('export const notes = [];\n');
+    expect(out?.texts).toEqual([]);
+  });
+
+  it('leaves a module without notes alone and refuses one that does not parse', () => {
+    const plain = "const notes = ['private'];\nexport default [];\n";
+    expect(stripNotes(plain)).toEqual({ source: plain, texts: [] });
+    expect(stripNotes('export const notes = [')).toBeNull();
   });
 });

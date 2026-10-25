@@ -573,6 +573,7 @@ const NOTES_ZH = {
   editHint: '編輯這一頁的講稿',
   empty: '這一頁還沒有講稿。',
   emptyEdit: '按「編輯」寫下這一頁要講的重點。',
+  emptyPublished: '發布的公開網址不含講稿，要看講稿請從工作台開講者模式。',
   gap: '',
   placeholder: '這一頁要講什麼？（支援 Markdown）',
   saving: '儲存中…',
@@ -585,6 +586,8 @@ const NOTES_EN: typeof NOTES_ZH = {
   editHint: 'Edit the notes for this slide',
   empty: 'No speaker notes for this slide.',
   emptyEdit: 'Press Edit to write what to say here.',
+  emptyPublished:
+    'Published links leave speaker notes out; open the presenter from the workspace to see them.',
   gap: ' ',
   placeholder: 'What to say on this slide (Markdown works)',
   saving: 'Saving…',
@@ -721,7 +724,7 @@ function SpeakerNotes({
           ) : (
             <span className="text-muted-foreground">
               {n.empty}
-              {editable && `${n.gap}${n.emptyEdit}`}
+              {`${n.gap}${editable ? n.emptyEdit : n.emptyPublished}`}
             </span>
           )}
         </div>

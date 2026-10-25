@@ -5,10 +5,12 @@ import { describe, expect, it } from 'vitest';
 import {
   filterFolders,
   findLeakedDecks,
+  findLeakedNotes,
   listDecks,
   parseDeploymentUrl,
   parseFirstAlias,
   resolveProjectName,
+  stripStagedNotes,
   validateDeckIds,
   vercelConfig,
 } from './publish.ts';
@@ -94,5 +96,46 @@ describe('publish helpers', () => {
   Builds`;
     expect(parseFirstAlias(inspect)).toBe('https://deck.vercel.app');
     expect(parseFirstAlias('  General\n')).toBeNull();
+  });
+
+  it('strips notes from every module of the staged decks only', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'open-slide-notes-'));
+    await fs.mkdir(path.join(root, 'alpha', 'parts'), { recursive: true });
+    await fs.mkdir(path.join(root, 'beta'));
+    await fs.writeFile(
+      path.join(root, 'alpha', 'index.tsx'),
+      'export const notes = ["Alpha secret note"];\n',
+    );
+    await fs.writeFile(
+      path.join(root, 'alpha', 'parts', 'notes.ts'),
+      'export const notes = ["Kept in its own file"];\n',
+    );
+    await fs.writeFile(
+      path.join(root, 'beta', 'index.tsx'),
+      'export const notes = ["Beta stays"];\n',
+    );
+
+    await expect(stripStagedNotes(root, ['alpha'])).resolves.toEqual([
+      'Alpha secret note',
+      'Kept in its own file',
+    ]);
+    expect(await fs.readFile(path.join(root, 'alpha', 'index.tsx'), 'utf8')).toBe(
+      'export const notes = [];\n',
+    );
+    expect(await fs.readFile(path.join(root, 'alpha', 'parts', 'notes.ts'), 'utf8')).toBe(
+      'export const notes = [];\n',
+    );
+    expect(await fs.readFile(path.join(root, 'beta', 'index.tsx'), 'utf8')).toContain('Beta stays');
+
+    await fs.writeFile(path.join(root, 'alpha', 'index.tsx'), 'export const notes = [');
+    await expect(stripStagedNotes(root, ['alpha'])).rejects.toThrow('沒辦法拿掉講稿');
+  });
+
+  it('flags a long note line that survived into the build', () => {
+    const files = [{ name: 'assets/deck.js', text: 'const a="Remember to thank the venue team";' }];
+    expect(findLeakedNotes(files, ['Remember to thank the venue team\nshort'])).toEqual([
+      { line: 'Remember to thank the venue team', file: 'assets/deck.js' },
+    ]);
+    expect(findLeakedNotes(files, ['Agenda', 'Remember to thank the cast'])).toEqual([]);
   });
 });
