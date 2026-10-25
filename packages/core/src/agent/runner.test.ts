@@ -287,6 +287,26 @@ describe('createAgentRunner', () => {
     expect(runner.stop(session.id)).toBe(false);
   });
 
+  it('closes a prompt the provider left blocking when it exits', async () => {
+    let allowed: Promise<boolean> | undefined;
+    const { store, runner } = setup(async (opts) => {
+      // The provider gives up mid-call without waiting for an answer.
+      allowed = opts.requestPermission({ tool: 'Bash', title: 'Run', detail: 'ls' });
+      opts.emit({ type: 'questions', questions: [] });
+      throw new Error('exited');
+    });
+    const session = store.create('codex', null);
+    await runner.send(session.id, { text: 'go' });
+    await settle();
+
+    const after = sessionOf(store, session.id);
+    expect(after.status).toBe('idle');
+    expect(after.items.find((i) => i.kind === 'permission')).toMatchObject({ status: 'denied' });
+    await expect(allowed).resolves.toBe(false);
+    // A question the provider only printed can still be answered next turn.
+    expect(after.items.find((i) => i.kind === 'question')).toMatchObject({ status: 'pending' });
+  });
+
   it('surfaces provider failures as error items', async () => {
     const { store, runner } = setup(async () => {
       throw new Error('not connected');

@@ -263,6 +263,16 @@ export function createAgentRunner(opts: {
       for (const id of openTools) {
         store.updateItem(sessionId, id, 'tool', { status: 'error' });
       }
+      // A prompt still blocking when the provider exits (it errored, or
+      // ignored the abort) has nobody left to answer it. A question the
+      // provider only printed stays open: the next turn can answer it.
+      for (const item of store.get(sessionId)?.items ?? []) {
+        const prompt = pending.get(item.id);
+        if (prompt) cancelPrompt(prompt);
+        else if (item.kind === 'permission' && item.status === 'pending') {
+          store.updateItem(sessionId, item.id, 'permission', { status: 'denied' });
+        }
+      }
       if (!resultSeen) {
         store.appendItem(sessionId, {
           kind: 'result',

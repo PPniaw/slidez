@@ -578,6 +578,9 @@ export function useAgentSession(id: string | null): AgentSession | null {
 }
 
 export type AgentActivity = {
+  // The running session the activity describes, so the pill can open it
+  // rather than whichever conversation the dock last showed.
+  sessionId: string;
   provider: AgentProviderId;
   phase: 'thinking' | 'tool' | 'waiting';
   title: string | null;
@@ -590,15 +593,20 @@ export function useAgentActivity(slideId: string): AgentActivity | null {
   const session = useAgentSession(summary?.id ?? null);
   if (!summary) return null;
   const items = session?.items ?? [];
-  const waiting = items.some(
-    (i) => (i.kind === 'question' || i.kind === 'permission') && i.status === 'pending',
-  );
-  if (waiting) return { provider: summary.provider, phase: 'waiting', title: null, detail: null };
+  const base = { sessionId: summary.id, provider: summary.provider };
+  // Only the turn under way counts: a prompt an earlier turn left behind
+  // must not make this one read as waiting.
+  let turnStart = items.length - 1;
+  while (turnStart >= 0 && items[turnStart]?.kind !== 'user') turnStart--;
+  const waiting = items
+    .slice(turnStart + 1)
+    .some((i) => (i.kind === 'question' || i.kind === 'permission') && i.status === 'pending');
+  if (waiting) return { ...base, phase: 'waiting', title: null, detail: null };
   const last = items.at(-1);
   if (last?.kind === 'tool' && last.status === 'running') {
-    return { provider: summary.provider, phase: 'tool', title: last.title, detail: last.detail };
+    return { ...base, phase: 'tool', title: last.title, detail: last.detail };
   }
-  return { provider: summary.provider, phase: 'thinking', title: null, detail: null };
+  return { ...base, phase: 'thinking', title: null, detail: null };
 }
 
 export function useAgentDock() {
