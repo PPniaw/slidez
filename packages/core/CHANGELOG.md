@@ -1,5 +1,16 @@
 # @open-slide/core
 
+## 2.8.1
+
+### Patch Changes
+
+- c5533d0: The "waiting for your reply" pill over a deck now opens the conversation that is waiting, instead of whichever one the agent panel showed last. A question or permission prompt left over from an earlier turn no longer keeps the pill in its waiting state, and a permission prompt the provider abandoned when it exited is closed as denied.
+- 8169afa: The asset manager's "Global" tab is now called "Shared", since it only ever held the project's shared `assets/` folder. Below the shared files it now lists every deck's own assets, grouped by deck and read-only, with a link that opens that deck's own tab to manage them.
+- 48c2c78: A failed save now offers a "Report" button. After the user confirms, the error details (including the slide lines around the failure) are sent to the slidez developers through the live service.
+- f0966eb: Text passed through more than one component (a layout handing `title` to a `Title`), or several props rendered in one element (`<p>{organ} {desc}</p>`), can now be edited on the slide; the edit lands on the literal the deck writes at the matching call. A save the editor can't place now explains why, in the user's language, instead of showing the internal reason.
+- 52c9d39: Assets can move between a deck and the shared folder. Drag a deck asset onto the "Shared" tab, or pick "Move to shared" from its menu, and the deck's imports change from `./assets/<name>` to `@assets/<name>`; a shared asset moves back the same way. The move is refused, with the file and line, when a reference is not an import it can rewrite, when another deck uses the file, or while the agent is editing the deck. A different file with the same name is offered a free name, an identical one is reused, and the toast after a move offers Undo.
+- 81750fb: Save hand edits before the agent takes a turn, and refuse to save edits made against a slide file that has changed since (the agent, an editor, another tab), so they no longer land on the wrong element. The save bar says so and offers Discard.
+
 ## 2.8.0
 
 ### Minor Changes
