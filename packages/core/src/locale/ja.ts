@@ -312,6 +312,10 @@ export const ja: Locale = {
     commentAddFailed: 'コメントを追加できませんでした：',
     commentRegionNoTarget: 'この範囲を付けられる要素が見つかりませんでした。',
     saveFailed: '保存に失敗しました:',
+    staleLabel: 'スライドが変更されたため保存できません',
+    staleTitle: 'スライドがエージェントまたは別のプログラムで変更されました',
+    staleDescription:
+      '未保存の変更は変更前の版に対するものなので、適用できなくなりました。破棄してから編集し直してください。',
     decreaseFontSize: 'フォントサイズを縮小',
     increaseFontSize: 'フォントサイズを拡大',
   },
@@ -643,6 +647,8 @@ export const ja: Locale = {
     manageConnections: 'エージェントを管理',
     backToChat: '戻る',
     toastSendFailed: 'メッセージを送信できませんでした',
+    unsavedEditsBlockSend:
+      '手動の編集がまだ保存されていないため、送信を止めました。保存または破棄してから送信してください。',
     newDeckTitle: 'どんなデッキにしますか？',
     newDeckHint:
       'テーマ、対象、トーンを伝えてください。{provider} が 1 ページずつ作成する様子を見られます。',

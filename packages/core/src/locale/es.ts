@@ -314,6 +314,10 @@ export const es: Locale = {
     commentAddFailed: 'No se pudo añadir el comentario:',
     commentRegionNoTarget: 'No se encontró un elemento al que asociar esta zona.',
     saveFailed: 'No se pudo guardar:',
+    staleLabel: 'Diapositiva modificada, no se puede guardar',
+    staleTitle: 'El agente u otro programa modificó la diapositiva',
+    staleDescription:
+      'Estos cambios sin guardar se hicieron sobre la versión anterior y ya no se pueden aplicar. Descártalos y vuelve a editar.',
     decreaseFontSize: 'Reducir tamaño de fuente',
     increaseFontSize: 'Aumentar tamaño de fuente',
   },
@@ -644,6 +648,8 @@ export const es: Locale = {
     manageConnections: 'Gestionar agentes',
     backToChat: 'Volver',
     toastSendFailed: 'No se pudo enviar el mensaje',
+    unsavedEditsBlockSend:
+      'Tus ediciones aún no están guardadas, así que el mensaje no se envió. Guárdalas o descártalas y vuelve a enviarlo.',
     newDeckTitle: '¿De qué trata esta presentación?',
     newDeckHint:
       'Describe el tema, la audiencia y el tono. {provider} la redacta página a página mientras miras.',

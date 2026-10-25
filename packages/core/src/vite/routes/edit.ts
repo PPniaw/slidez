@@ -3,6 +3,7 @@ import type { ViteDevServer } from 'vite';
 import { applyEditBatch, type BatchEdit } from '../../editing/batch-edit.ts';
 import { applyEdit, type EditOp } from '../../editing/edit-ops.ts';
 import { applyRevertAsset } from '../../editing/revert-asset.ts';
+import { sourceRev } from '../../editing/source-rev.ts';
 import { validateMutationRequest } from '../../http/request-guard.ts';
 import {
   type ApiContext,
@@ -15,6 +16,7 @@ import {
 // POST /__edit                applyEdit({ slideId, line, column, ops })
 // POST /__edit/revert-asset   applyRevertAsset({ slideId, assetPath })
 // POST /__edit/batch          applyEdit × N — single FS write per request
+// GET  /__edit/rev?slideId=   the source revision buffered edits are made against
 
 type EditBody = {
   slideId?: string;
@@ -26,12 +28,21 @@ type EditBody = {
 type EditBatchBody = {
   slideId?: string;
   edits?: BatchEdit[];
+  /** The revision the edits were made against; a different file is refused. */
+  baseRev?: string;
 };
 
 export function registerEditRoutes(server: ViteDevServer, ctx: ApiContext): void {
   server.middlewares.use('/__edit', async (req, res, next) => {
     const url = new URL(req.url ?? '/', 'http://local');
     const method = req.method ?? 'GET';
+    if (method === 'GET' && url.pathname === '/rev') {
+      const file = resolveSlideEntryPath(ctx, url.searchParams.get('slideId') ?? '');
+      if (!file) return json(res, 400, { error: 'invalid slideId' });
+      const source = await readSlideSource(file).catch(() => null);
+      if (source === null) return json(res, 404, { error: 'slide not found' });
+      return json(res, 200, { rev: sourceRev(source) });
+    }
     if (method !== 'POST') return next();
     const requestCheck = validateMutationRequest(req, { requireJsonBody: true });
     if (!requestCheck.ok) return json(res, requestCheck.status, { error: requestCheck.error });
@@ -90,11 +101,15 @@ export function registerEditRoutes(server: ViteDevServer, ctx: ApiContext): void
 
         const source = await readSlideSource(file);
         if (source === null) return json(res, 404, { error: 'slide not found' });
+        const rev = sourceRev(source);
+        if (body.baseRev !== undefined && body.baseRev !== rev) {
+          return json(res, 409, { error: 'stale', rev });
+        }
 
         const { source: updated, results } = applyEditBatch(source, body.edits);
         const changed = updated !== source;
         if (changed) await fs.writeFile(file, updated, 'utf8');
-        return json(res, 200, { ok: true, changed, results });
+        return json(res, 200, { ok: true, changed, results, rev: sourceRev(updated) });
       }
 
       return next();

@@ -20,7 +20,7 @@ export function SaveBar() {
   const committing = insp.committing || design.committing;
 
   const onSave = async () => {
-    const tasks: Promise<void>[] = [];
+    const tasks: Promise<unknown>[] = [];
     if (inspectorCount > 0) tasks.push(Promise.resolve(insp.commitEdits()));
     if (designCount > 0) tasks.push(Promise.resolve(design.commit()));
     // Each provider surfaces its own errors via toast; swallow here so
@@ -75,6 +75,7 @@ export function SaveBar() {
       onSave={onSave}
       onDiscard={onDiscard}
       unsavedLabel={format(plural(total, t.inspector.unsavedChanges), { count: total })}
+      blockedLabel={insp.stale && designCount === 0 ? t.inspector.staleLabel : undefined}
       onUndo={history.undo}
       onRedo={history.redo}
       canUndo={history.canUndo}

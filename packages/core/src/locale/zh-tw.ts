@@ -306,6 +306,10 @@ export const zhTW: Locale = {
     commentAddFailed: '無法新增留言：',
     commentRegionNoTarget: '找不到可以附加這個範圍的元件。',
     saveFailed: '儲存失敗：',
+    staleLabel: '簡報已被修改，無法儲存',
+    staleTitle: '簡報已被 AI 或其他程式修改',
+    staleDescription:
+      '這些未儲存的變更是針對修改前的版本，已經無法套用。請按「捨棄」，再重新編輯。',
     decreaseFontSize: '縮小字級',
     increaseFontSize: '放大字級',
   },
@@ -631,6 +635,7 @@ export const zhTW: Locale = {
     manageConnections: '管理 agent',
     backToChat: '返回',
     toastSendFailed: '訊息送出失敗',
+    unsavedEditsBlockSend: '手動修改還沒儲存成功，已暫停送出。請先儲存或捨棄，再傳給 AI。',
     newDeckTitle: '這份簡報要講什麼？',
     newDeckHint: '描述主題、對象和風格，{provider} 會逐頁產生，你可以邊看邊調整。',
     newDeckPlaceholder: '一場 10 分鐘的分享，主題是…',

@@ -23,6 +23,7 @@ import {
   consumeRequest,
   createSession,
   deleteSession,
+  prepareAgentTurn,
   readyProviders,
   resolveModelChoice,
   respond,
@@ -119,6 +120,7 @@ export function AgentPanel({
       sendingRef.current = true;
       setSending(true);
       try {
+        await prepareAgentTurn();
         const id = await ensureSession(fresh || isNewDeck);
         setDraft('');
         await sendMessage(
@@ -172,6 +174,7 @@ export function AgentPanel({
     async (itemId: string, text: string) => {
       if (!session) return;
       try {
+        await prepareAgentTurn();
         await sendMessage(session.id, text, contextRef.current, itemId);
       } catch (err) {
         toast.error(t.agent.toastSendFailed, {

@@ -309,6 +309,10 @@ export const en: Locale = {
     commentAddFailed: "Couldn't add comment:",
     commentRegionNoTarget: "Couldn't find an element to attach this region to.",
     saveFailed: "Couldn't save:",
+    staleLabel: 'Slide changed, can’t save',
+    staleTitle: 'The slide was changed by the agent or another program',
+    staleDescription:
+      'These unsaved changes were made on the earlier version and can no longer be applied. Discard them, then edit again.',
     decreaseFontSize: 'Decrease font size',
     increaseFontSize: 'Increase font size',
   },
@@ -635,6 +639,8 @@ export const en: Locale = {
     manageConnections: 'Manage agents',
     backToChat: 'Back',
     toastSendFailed: 'Could not send message',
+    unsavedEditsBlockSend:
+      'Your edits are not saved yet, so the message was held back. Save or discard them, then send it again.',
     newDeckTitle: "What's this deck about?",
     newDeckHint:
       'Describe the topic, audience and tone. {provider} drafts it page by page while you watch.',

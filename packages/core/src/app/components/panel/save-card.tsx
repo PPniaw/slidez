@@ -1,4 +1,4 @@
-import { Check, Loader2, Redo2, Save, Undo2 } from 'lucide-react';
+import { Check, Loader2, Redo2, Save, TriangleAlert, Undo2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { usePanelMount } from '@/components/panel/panel-shell';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,8 @@ type SaveCardProps = {
   onSave: () => Promise<void> | void;
   onDiscard: () => void;
   unsavedLabel: React.ReactNode;
+  /** Shown instead of the unsaved count when the pending changes cannot be saved. */
+  blockedLabel?: string;
   savedLabel?: string;
   uiAttr: 'inspector' | 'design';
   onUndo?: () => void;
@@ -32,6 +34,7 @@ export function SaveCard({
   onSave,
   onDiscard,
   unsavedLabel,
+  blockedLabel,
   savedLabel,
   uiAttr,
   onUndo,
@@ -57,6 +60,7 @@ export function SaveCard({
     await onSave();
     setJustSaved(true);
   };
+  const blocked = !!blockedLabel && dirty && !committing;
 
   const dataAttrs = uiAttr === 'inspector' ? { 'data-inspector-ui': '' } : { 'data-design-ui': '' };
 
@@ -108,6 +112,14 @@ export function SaveCard({
             <Check className="size-3.5 shrink-0 text-[oklch(0.55_0.13_165)]" strokeWidth={2.5} />
             {resolvedSavedLabel}
           </span>
+        ) : blocked ? (
+          <span
+            role="alert"
+            className="inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 text-[12px] font-medium text-destructive"
+          >
+            <TriangleAlert className="size-3.5 shrink-0" />
+            {blockedLabel}
+          </span>
         ) : dirty || committing ? (
           <span className="inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 text-[12px] font-medium text-foreground">
             <span
@@ -134,7 +146,7 @@ export function SaveCard({
             variant="brand"
             className="h-7 px-3"
             onClick={handleSave}
-            disabled={committing || !dirty}
+            disabled={committing || !dirty || blocked}
           >
             {committing ? (
               <>

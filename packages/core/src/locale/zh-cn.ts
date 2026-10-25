@@ -306,6 +306,10 @@ export const zhCN: Locale = {
     commentAddFailed: '无法添加评论：',
     commentRegionNoTarget: '找不到可以附加该区域的元素。',
     saveFailed: '保存失败：',
+    staleLabel: '演示文稿已被修改，无法保存',
+    staleTitle: '演示文稿已被 AI 或其他程序修改',
+    staleDescription:
+      '这些未保存的更改基于修改前的版本，已无法应用。请点击「放弃」，然后重新编辑。',
     decreaseFontSize: '缩小字号',
     increaseFontSize: '放大字号',
   },
@@ -631,6 +635,7 @@ export const zhCN: Locale = {
     manageConnections: '管理 agent',
     backToChat: '返回',
     toastSendFailed: '消息发送失败',
+    unsavedEditsBlockSend: '手动修改尚未保存成功，已暂停发送。请先保存或放弃，再发给 AI。',
     newDeckTitle: '这份幻灯片要讲什么？',
     newDeckHint: '描述主题、受众和风格，{provider} 会逐页生成，你可以边看边调整。',
     newDeckPlaceholder: '一场 10 分钟的分享，主题是…',

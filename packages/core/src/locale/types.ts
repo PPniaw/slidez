@@ -311,6 +311,9 @@ export type Locale = {
     commentRegionNoTarget: string;
     /** Prefix for the toast shown when one or more buffered edits fail to write to disk. */
     saveFailed: string;
+    staleLabel: string;
+    staleTitle: string;
+    staleDescription: string;
     decreaseFontSize: string;
     increaseFontSize: string;
   };
@@ -680,6 +683,7 @@ export type Locale = {
     manageConnections: string;
     backToChat: string;
     toastSendFailed: string;
+    unsavedEditsBlockSend: string;
     newDeckTitle: string;
     newDeckHint: string;
     newDeckPlaceholder: string;

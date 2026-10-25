@@ -323,6 +323,21 @@ function turnSettings(id: string) {
   };
 }
 
+// Work that must land before a turn is sent, such as the inspector writing
+// the user's unsaved edits. A hook that throws holds the message back.
+const beforeTurnHooks = new Set<() => Promise<void>>();
+
+export function registerBeforeAgentTurn(hook: () => Promise<void>): () => void {
+  beforeTurnHooks.add(hook);
+  return () => {
+    beforeTurnHooks.delete(hook);
+  };
+}
+
+export async function prepareAgentTurn(): Promise<void> {
+  for (const hook of beforeTurnHooks) await hook();
+}
+
 export async function sendMessage(
   id: string,
   text: string,

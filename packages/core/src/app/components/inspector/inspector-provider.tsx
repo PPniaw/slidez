@@ -16,6 +16,7 @@ import { IconTooltip } from '@/components/icon-tooltip';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { TooltipTrigger } from '@/components/ui/tooltip';
+import { registerBeforeAgentTurn } from '@/lib/agent/use-agent';
 import { findSlideSource } from '@/lib/inspector/fiber';
 import {
   appendTextEdit,
@@ -23,9 +24,16 @@ import {
   type TextEditStep,
 } from '@/lib/inspector/text-edit-timeline';
 import { type AddCommentInput, type SlideComment, useComments } from '@/lib/inspector/use-comments';
-import { type Edit, type EditOp, useEditor } from '@/lib/inspector/use-editor';
+import {
+  type Edit,
+  type EditOp,
+  fetchSourceRev,
+  StaleSourceError,
+  useEditor,
+} from '@/lib/inspector/use-editor';
 import { useVisualEditor, type VisualEdit } from '@/lib/inspector/use-visual-editor';
 import { isShortcutControlTarget, isTypingTarget } from '@/lib/keys';
+import { slideChangeIncludes } from '@/lib/slides';
 import { textDiff } from '@/lib/text-diff';
 import { format, plural, useLocale } from '@/lib/use-locale';
 import { round2 } from '@/lib/utils';
@@ -412,7 +420,11 @@ type InspectorCtx = {
   // close) is what actually writes to disk; `cancelEdits` reverts.
   bufferOps: (line: number, column: number, anchor: HTMLElement, ops: EditOp[]) => void;
   pendingCount: number;
-  commitEdits: () => Promise<void>;
+  // The file changed after the pending edits were made, so they can no
+  // longer be saved; only discarding them is left.
+  stale: boolean;
+  /** Resolves true once nothing is left pending. */
+  commitEdits: () => Promise<boolean>;
   cancelEdits: () => void;
   committing: boolean;
   openCrop: (anchor: HTMLImageElement) => void;
@@ -506,6 +518,12 @@ export function InspectorProvider({
   const pendingSeqRef = useRef(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [committing, setCommitting] = useState(false);
+  // The revision on screen, and the one the pending edits were made against.
+  const displayedRevRef = useRef<string | null>(null);
+  const baseRevRef = useRef<string | null>(null);
+  const [stale, setStale] = useState(false);
+  const staleRef = useRef(false);
+  const commitPromiseRef = useRef<Promise<boolean> | null>(null);
   const [cropTarget, setCropTarget] = useState<{
     line: number;
     column: number;
@@ -532,6 +550,12 @@ export function InspectorProvider({
     return next;
   }, []);
 
+  const clearPendingRev = useCallback(() => {
+    baseRevRef.current = null;
+    staleRef.current = false;
+    setStale(false);
+  }, []);
+
   const refreshCount = useCallback(() => {
     let n = 0;
     for (const b of pendingRef.current.values()) {
@@ -539,9 +563,11 @@ export function InspectorProvider({
         n++;
       }
     }
+    if (n === 0) clearPendingRev();
+    else baseRevRef.current ??= displayedRevRef.current;
     setPendingCount(n);
     setOpsVersion((v) => v + 1);
-  }, []);
+  }, [clearPendingRev]);
 
   // Find the live anchor for a buffered loc. Used by history undo/redo
   // since the original `anchor` reference may have unmounted. With an
@@ -954,9 +980,26 @@ export function InspectorProvider({
     bufferBatch,
   });
 
-  const commitEdits = useCallback(async () => {
+  const markStale = useCallback(() => {
+    if (staleRef.current) return;
+    staleRef.current = true;
+    setStale(true);
+    toast.warning(t.inspector.staleTitle, {
+      id: 'inspector-stale',
+      description: t.inspector.staleDescription,
+    });
+  }, [t]);
+
+  const commitEdits = useCallback(async (): Promise<boolean> => {
     const buckets = pendingRef.current;
-    if (buckets.size === 0) return;
+    if (buckets.size === 0) return true;
+    if (staleRef.current) {
+      toast.error(t.inspector.staleTitle, {
+        id: 'inspector-stale',
+        description: t.inspector.staleDescription,
+      });
+      return false;
+    }
     type PendingItem = {
       bucket: Bucket;
       seq: number;
@@ -1040,13 +1083,27 @@ export function InspectorProvider({
     }
     if (pending.length === 0) {
       pendingRef.current = new Map();
+      clearPendingRev();
       setPendingCount(0);
       history.clear();
-      return;
+      return true;
     }
     setCommitting(true);
+    const run = applyEdits(
+      pending.map((p) => p.edit),
+      baseRevRef.current,
+    );
+    commitPromiseRef.current = run.then(
+      () => true,
+      () => false,
+    );
     try {
-      const results = await applyEdits(pending.map((p) => p.edit));
+      const { results, rev } = await run;
+      if (rev) {
+        // What is left pending now sits on top of the file this save wrote.
+        displayedRevRef.current = rev;
+        baseRevRef.current = rev;
+      }
       const failures: string[] = [];
       for (let i = 0; i < results.length; i++) {
         const item = pending[i];
@@ -1069,19 +1126,35 @@ export function InspectorProvider({
       }
       refreshCount();
       if (failures.length > 0) toast.error(`${t.inspector.saveFailed} ${failures.join('; ')}`);
+      return failures.length === 0;
     } catch (err) {
+      if (err instanceof StaleSourceError) {
+        markStale();
+        return false;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       toast.error(`${t.inspector.saveFailed} ${msg}`);
       throw err;
     } finally {
+      commitPromiseRef.current = null;
       setCommitting(false);
       history.clear();
     }
-  }, [applyEdits, history, refreshCount, t]);
+  }, [applyEdits, clearPendingRev, history, markStale, refreshCount, t]);
 
   const cancelEdits = useCallback(() => {
     if (pendingRef.current.size === 0) {
       history.clear();
+      return;
+    }
+    if (staleRef.current) {
+      // The canvas shows these edits over a newer file, and their saved
+      // originals belong to the old one; render the file as it is now.
+      pendingRef.current = new Map();
+      clearPendingRev();
+      setPendingCount(0);
+      history.clear();
+      window.location.reload();
       return;
     }
     const root = document.querySelector<HTMLElement>('[data-inspector-root]');
@@ -1108,10 +1181,11 @@ export function InspectorProvider({
       }
     }
     pendingRef.current = new Map();
+    clearPendingRev();
     setPendingCount(0);
     setOpsVersion((version) => version + 1);
     history.clear();
-  }, [history]);
+  }, [clearPendingRev, history]);
 
   // Auto-flush on inspector close and on route unmount so toggling
   // off or navigating away doesn't drop buffered edits. Failures are
@@ -1127,6 +1201,42 @@ export function InspectorProvider({
       commitRef.current().catch(() => {});
     };
   }, []);
+
+  // Follow the revision on screen. A change that is not this editor's own
+  // save (the agent, an editor, another tab) leaves pending edits aimed at
+  // code that has moved, so they are marked stale rather than saved.
+  useEffect(() => {
+    let cancelled = false;
+    const sync = async () => {
+      await commitPromiseRef.current;
+      const rev = await fetchSourceRev(slideId);
+      if (cancelled || !rev) return;
+      displayedRevRef.current = rev;
+      if (baseRevRef.current && rev !== baseRevRef.current) markStale();
+    };
+    void sync();
+    if (!import.meta.hot) return;
+    const onChange = (data: unknown) => {
+      if (slideChangeIncludes(data, slideId)) void sync();
+    };
+    import.meta.hot.on('open-slide:slide-changed', onChange);
+    return () => {
+      cancelled = true;
+      import.meta.hot?.off('open-slide:slide-changed', onChange);
+    };
+  }, [slideId, markStale]);
+
+  // Before the agent takes a turn, write what the user edited by hand so
+  // the agent reads the deck as it looks, and neither overwrites the other.
+  const unsavedBlocksAgent = t.agent.unsavedEditsBlockSend;
+  useEffect(
+    () =>
+      registerBeforeAgentTurn(async () => {
+        const saved = await commitRef.current().catch(() => false);
+        if (!saved) throw new Error(unsavedBlocksAgent);
+      }),
+    [unsavedBlocksAgent],
+  );
 
   // Re-apply buffered ops onto any `[data-slide-loc]` element that gets
   // (re)mounted in the slide canvas. Without this, navigating to a
@@ -1428,6 +1538,7 @@ export function InspectorProvider({
       applyEdit,
       bufferOps,
       pendingCount,
+      stale,
       commitEdits,
       cancelEdits,
       committing,
@@ -1468,6 +1579,7 @@ export function InspectorProvider({
       applyEdit,
       bufferOps,
       pendingCount,
+      stale,
       commitEdits,
       cancelEdits,
       committing,
