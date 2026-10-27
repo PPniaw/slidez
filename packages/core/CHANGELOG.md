@@ -1,5 +1,11 @@
 # @open-slide/core
 
+## 2.8.2
+
+### Patch Changes
+
+- 1e8a47a: The publish dialog no longer stretches past the screen when the Vercel CLI prints an update notice: the account name is read from `vercel whoami`'s stdout only, and a long name wraps instead of widening the dialog.
+
 ## 2.8.1
 
 ### Patch Changes
