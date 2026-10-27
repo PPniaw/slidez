@@ -156,6 +156,7 @@ describe('codexPermissionOverrides', () => {
     expect(codexPermissionOverrides(['/ws/slides', '/ws/assets'])).toEqual([
       'default_permissions = "open-slide"',
       'permissions.open-slide.filesystem = { ":minimal" = "read", ":workspace_roots" = { "." = "read" }, "/ws/slides" = "write", "/ws/assets" = "write" }',
+      'project_root_markers = []',
     ]);
   });
 

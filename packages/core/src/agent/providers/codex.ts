@@ -179,6 +179,11 @@ export function codexPermissionOverrides(writableRoots: string[]): string[] {
   return [
     `default_permissions = ${JSON.stringify(CODEX_PERMISSION_PROFILE)}`,
     `permissions.${CODEX_PERMISSION_PROFILE}.filesystem = { ${entries.join(', ')} }`,
+    // Codex looks for AGENTS.md from the enclosing git root down, and the
+    // profile can't read above the project, so a project inside a repo with
+    // its own AGENTS.md fails to start ("Operation not permitted"). The
+    // project folder is the root; that repo's rules aren't for decks anyway.
+    'project_root_markers = []',
   ];
 }
 
