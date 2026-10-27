@@ -1,5 +1,12 @@
 # @open-slide/core
 
+## 2.8.4
+
+### Patch Changes
+
+- d933675: Publishing a deck from a project inside a git repository no longer connects the new Vercel project to that repository. Before, every push to the repository started a Vercel build that failed ("No Output Directory named public") and sent a failure email. Already connected projects stay connected; disconnect one with `vercel git disconnect` in its folder under `node_modules/.open-slide/publish/`.
+- 4aada63: Unpublishing a deck works again with Vercel CLI 65 (the one bundled with the slidez desktop app). That CLI only deletes a project with `--yes` when it has no terminal, so unpublishing failed with "Vercel 專案 … 還在". Older CLIs without `--yes` still get the answer on stdin.
+
 ## 2.8.3
 
 ### Patch Changes
