@@ -349,7 +349,7 @@ export function PublishButton({ slideId }: { slideId: string }) {
             <div className="grid gap-3 text-[13px]">
               <p className="text-muted-foreground">
                 {s.account}：
-                <span className="font-medium text-foreground">{status.vercel.user}</span>
+                <span className="break-all font-medium text-foreground">{status.vercel.user}</span>
               </p>
               {record ? (
                 <div

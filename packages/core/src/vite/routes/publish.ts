@@ -36,7 +36,8 @@ const LOGIN_PROMPT_TIMEOUT_MS = 30_000;
 
 export type PublishRecord = { project: string; url: string; publishedAt: string };
 type Records = Record<string, PublishRecord>;
-type RunResult = { code: number; output: string };
+/** `output` is stdout and stderr as they arrived; `stdout` alone for parsing. */
+type RunResult = { code: number; output: string; stdout: string };
 
 // The dev server runs with NODE_ENV=development, and a child build that
 // inherits it ships the editor UI (Agent, design, edit) to the public site.
@@ -62,12 +63,14 @@ function run(
     });
     if (input !== undefined) child.stdin?.end(input);
     let output = '';
+    let stdout = '';
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error(`${cmd} ${args[0] ?? ''} 超過時間仍未完成。`));
     }, timeoutMs);
     child.stdout?.on('data', (c: Buffer) => {
       output += c.toString('utf8');
+      stdout += c.toString('utf8');
     });
     child.stderr?.on('data', (c: Buffer) => {
       output += c.toString('utf8');
@@ -78,7 +81,7 @@ function run(
     });
     child.on('close', (code) => {
       clearTimeout(timer);
-      resolve({ code: code ?? 1, output });
+      resolve({ code: code ?? 1, output, stdout });
     });
   });
 }
@@ -86,6 +89,14 @@ function run(
 export function parsePublishedUrl(output: string): string | null {
   const escaped = PUBLISHED_LABEL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return output.match(new RegExp(`${escaped}(https?://\\S+)`))?.[1] ?? null;
+}
+
+// `vercel whoami` prints the username on stdout; its banner, version line and
+// update notice (a box of ─ that never wraps) go to stderr and must not be
+// taken for the name.
+export function parseVercelUser(stdout: string): string | null {
+  const lines = stdout.split('\n').map((l) => l.trim());
+  return lines.filter((l) => /^[\w.@-]{1,100}$/.test(l)).at(-1) ?? null;
 }
 
 export type DeviceLogin = { url: string; code: string };
@@ -139,7 +150,7 @@ async function writeRecords(ctx: ApiContext, records: Records): Promise<void> {
 async function vercelStatus(cwd: string) {
   try {
     const r = await run('vercel', ['whoami'], cwd, STATUS_TIMEOUT_MS);
-    const user = r.output.trim().split('\n').filter(Boolean).at(-1) ?? null;
+    const user = parseVercelUser(r.stdout);
     return { installed: true, loggedIn: r.code === 0, user: r.code === 0 ? user : null };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
