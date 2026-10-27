@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,6 +14,7 @@ import {
   stripStagedNotes,
   validateDeckIds,
   vercelConfig,
+  vercelEnv,
 } from './publish.ts';
 
 describe('publish helpers', () => {
@@ -96,6 +98,24 @@ describe('publish helpers', () => {
   Builds`;
     expect(parseFirstAlias(inspect)).toBe('https://deck.vercel.app');
     expect(parseFirstAlias('  General\n')).toBeNull();
+  });
+
+  it('hides the enclosing git repository from vercel', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'open-slide-publish-'));
+    const git = (args: string[], cwd: string, env?: NodeJS.ProcessEnv) =>
+      execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: 'pipe' }).trim();
+    git(['init', '-q'], root);
+    git(['remote', 'add', 'origin', 'https://github.com/someone/slides.git'], root);
+    const deployDir = path.join(root, 'node_modules', '.open-slide', 'publish', 'deck');
+    await fs.mkdir(deployDir, { recursive: true });
+
+    expect(git(['rev-parse', '--git-common-dir'], deployDir)).not.toBe('');
+    expect(() => git(['rev-parse', '--git-common-dir'], deployDir, vercelEnv(deployDir))).toThrow(
+      'not a git repository',
+    );
+    expect(vercelEnv(deployDir, { GIT_CEILING_DIRECTORIES: '/elsewhere' })).toMatchObject({
+      GIT_CEILING_DIRECTORIES: `${path.dirname(deployDir)}${path.delimiter}/elsewhere`,
+    });
   });
 
   it('strips notes from every module of the staged decks only', async () => {

@@ -153,6 +153,15 @@ export function parseFirstAlias(output: string): string | null {
   return section.match(/https:\/\/[a-z0-9.-]+/i)?.[0] ?? null;
 }
 
+// The deploy folder sits inside the user's project, often a Git repository.
+// When `vercel deploy --yes` creates a project it asks Git for the repository
+// (`git rev-parse` walks up from the folder) and connects it, so every later
+// push starts a build that cannot work. Stop Git's search at the folder.
+export function vercelEnv(cwd: string, env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const ceilings = [path.dirname(cwd), env.GIT_CEILING_DIRECTORIES].filter(Boolean);
+  return { ...env, GIT_CEILING_DIRECTORIES: ceilings.join(path.delimiter) };
+}
+
 function runVercel(
   args: string[],
   cwd: string,
@@ -161,6 +170,7 @@ function runVercel(
   return new Promise((resolve, reject) => {
     const child = spawn('vercel', args, {
       cwd,
+      env: vercelEnv(cwd),
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: process.platform === 'win32',
     });
