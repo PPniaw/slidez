@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDeviceLogin, parsePublishedUrl, parseVercelUser } from './publish.ts';
+import { parseDeviceLogin, parsePublishedUrl, parseVercelUser, rejectsYesFlag } from './publish.ts';
 
 describe('publish route helpers', () => {
   it('reads the Vercel username without the CLI chatter around it', () => {
@@ -31,5 +31,15 @@ describe('publish route helpers', () => {
       code: 'MFHM-CZHQ',
     });
     expect(parseDeviceLogin('Vercel CLI 65.2.0\n')).toBeNull();
+  });
+
+  it('falls back to answering the prompt only when the CLI has no --yes', () => {
+    expect(
+      rejectsYesFlag(
+        'Vercel CLI 54.9.1 (Node.js 20.20.2)\nError: unknown or unexpected option: --yes\n',
+      ),
+    ).toBe(true);
+    expect(rejectsYesFlag('Vercel CLI 65.2.0\n\n✓ Deleted         deck\n')).toBe(false);
+    expect(rejectsYesFlag('Vercel CLI 65.2.0\nError: Project not found. (404)\n')).toBe(false);
   });
 });

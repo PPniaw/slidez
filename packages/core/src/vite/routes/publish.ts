@@ -99,6 +99,20 @@ export function parseVercelUser(stdout: string): string | null {
   return lines.filter((l) => /^[\w.@-]{1,100}$/.test(l)).at(-1) ?? null;
 }
 
+// Without a terminal, newer Vercel CLIs (65.x) delete a project only with
+// --yes and ignore an answer on stdin; older ones (54.x) have no --yes at all,
+// refuse it as an unknown option, and take the answer on stdin instead.
+export function rejectsYesFlag(output: string): boolean {
+  return /unknown or unexpected option: --yes/.test(output);
+}
+
+async function removeProject(project: string, cwd: string): Promise<RunResult> {
+  const timeoutMs = STATUS_TIMEOUT_MS * 3;
+  const r = await run('vercel', ['project', 'rm', project, '--yes'], cwd, timeoutMs);
+  if (!rejectsYesFlag(r.output)) return r;
+  return run('vercel', ['project', 'rm', project], cwd, timeoutMs, 'y\n');
+}
+
 export type DeviceLogin = { url: string; code: string };
 
 // `vercel login` without a terminal prints the device page and waits for it
@@ -311,15 +325,8 @@ export function registerPublishRoutes(server: ViteDevServer, ctx: ApiContext): v
         const record = records[slideId];
         if (!record) return json(res, 404, { error: '這份簡報目前沒有上線。' });
         const job = (async () => {
-          // `project rm` has no --yes: without an answer on stdin it quits with exit 0
-          // and deletes nothing, so answer the prompt and then confirm it is gone.
-          const r = await run(
-            'vercel',
-            ['project', 'rm', record.project],
-            ctx.userCwd,
-            STATUS_TIMEOUT_MS * 3,
-            'y\n',
-          );
+          // `project rm` can exit 0 and delete nothing, so confirm it is gone.
+          const r = await removeProject(record.project, ctx.userCwd);
           const check = await run(
             'vercel',
             ['project', 'inspect', record.project],
