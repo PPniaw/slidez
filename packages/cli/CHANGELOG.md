@@ -1,5 +1,11 @@
 # @open-slide/cli
 
+## 2.2.3
+
+### Patch Changes
+
+- 274db8d: Ship the MIT license file in the package.
+
 ## 2.2.2
 
 ### Patch Changes

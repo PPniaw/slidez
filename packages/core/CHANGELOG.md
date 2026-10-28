@@ -1,5 +1,11 @@
 # @open-slide/core
 
+## 2.8.5
+
+### Patch Changes
+
+- 274db8d: Ship the MIT license file in the package.
+
 ## 2.8.4
 
 ### Patch Changes
