@@ -434,6 +434,12 @@ export async function submitLoginCode(provider: AgentProviderId, code: string): 
   await request('/__agent/login/code', post({ provider, code }));
 }
 
+export async function loginWithApiKey(provider: AgentProviderId, key: string): Promise<void> {
+  await request('/__agent/login/key', post({ provider, key }));
+  await refreshStatus();
+  if (authOf(provider) === 'loggedIn') selectProvider(provider);
+}
+
 export async function logoutProvider(provider: AgentProviderId): Promise<void> {
   await request('/__agent/logout', post({ provider }));
   await refreshStatus();

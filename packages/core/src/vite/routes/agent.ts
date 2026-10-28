@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import type { ServerResponse } from 'node:http';
 import path from 'node:path';
 import type { ViteDevServer } from 'vite';
-import { AUTH_COMMANDS, forgetAuth } from '../../agent/auth.ts';
+import { cliEnv, loginMethod } from '../../agent/accounts.ts';
+import { AUTH_COMMANDS, forgetAuth, loginWithKey, saveClaudeKey } from '../../agent/auth.ts';
 import { findOnPath } from '../../agent/detect.ts';
 import { extractDeckSlug, stripDeckSlug } from '../../agent/prompt.ts';
 import { createProviders } from '../../agent/providers/index.ts';
@@ -45,6 +46,8 @@ import { detectPackageManager, runCommand } from './update.ts';
 // POST   /__agent/login                       { provider } → { url } once the CLI has opened
 //          the sign-in page; the panel then polls /status until `auth` turns loggedIn
 // POST   /__agent/login/code                  { provider, code } → { ok } for a code pasted back
+// POST   /__agent/login/key                   { provider, key } → { ok } for a provider that signs
+//          in with a pasted API key
 // POST   /__agent/logout                      { provider } → { ok }
 // GET    /__agent/sessions                    → { sessions: AgentSessionSummary[] }
 // POST   /__agent/sessions                    { provider, slideId? } → AgentSession
@@ -90,6 +93,7 @@ const MODEL_RE = /^[\w.:[\]-]{1,80}$/;
 const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
 const LOGIN_PROMPT_TIMEOUT_MS = 30_000;
 const LOGIN_CODE_RE = /^[\w#.~-]{1,512}$/;
+const API_KEY_RE = /^[\w.-]{20,512}$/;
 
 function parseModel(raw: unknown): string | null {
   return typeof raw === 'string' && MODEL_RE.test(raw) ? raw : null;
@@ -294,18 +298,22 @@ export function registerAgentRoutes(server: ViteDevServer, ctx: ApiContext): voi
         const body = (await readBody(req, AGENT_BODY_LIMIT)) as { provider?: unknown };
         if (!isAgentProviderId(body.provider)) return json(res, 400, { error: 'invalid provider' });
         const id = body.provider;
+        const browserLogin = AUTH_COMMANDS[id].browserLogin;
+        if (loginMethod(id) !== 'browser' || !browserLogin) {
+          return json(res, 400, { error: '請貼上 API key 登入。' });
+        }
         const cli = findOnPath(providers[id].cliCommand);
         if (!cli) return json(res, 409, { error: '這個 AI 還沒下載完成。' });
         // Pressing the button again reuses the sign-in that is still waiting.
         let job = logins.get(id);
         if (!job) {
-          const commands = AUTH_COMMANDS[id];
           const started = startCliLogin({
             cmd: cli,
-            args: commands.login,
+            args: browserLogin.args,
             cwd: ctx.userCwd,
+            env: cliEnv(id),
             parse: (output) => {
-              const found = commands.loginUrl(output);
+              const found = browserLogin.url(output);
               return found ? { url: found } : null;
             },
             timeoutMs: LOGIN_TIMEOUT_MS,
@@ -341,6 +349,26 @@ export function registerAgentRoutes(server: ViteDevServer, ctx: ApiContext): voi
         return json(res, 200, { ok: true });
       }
 
+      if (method === 'POST' && url.pathname === '/login/key') {
+        const guard = validateMutationRequest(req, { requireJsonBody: true });
+        if (!guard.ok) return json(res, guard.status, { error: guard.error });
+        const body = (await readBody(req, AGENT_BODY_LIMIT)) as {
+          provider?: unknown;
+          key?: unknown;
+        };
+        if (!isAgentProviderId(body.provider)) return json(res, 400, { error: 'invalid provider' });
+        const id = body.provider;
+        if (loginMethod(id) !== 'apiKey')
+          return json(res, 400, { error: '這個 AI 不用 API key。' });
+        const key = typeof body.key === 'string' ? body.key.trim() : '';
+        if (!API_KEY_RE.test(key)) return json(res, 400, { error: 'API key 格式不對。' });
+        const cli = findOnPath(providers[id].cliCommand);
+        if (!cli) return json(res, 409, { error: '這個 AI 還沒下載完成。' });
+        const result = await loginWithKey(cli, id, key);
+        if (!result.ok) return json(res, 400, { error: result.output || 'API key 登入失敗。' });
+        return json(res, 200, { ok: true });
+      }
+
       if (method === 'POST' && url.pathname === '/logout') {
         const guard = validateMutationRequest(req, { requireJsonBody: true });
         if (!guard.ok) return json(res, guard.status, { error: guard.error });
@@ -348,8 +376,14 @@ export function registerAgentRoutes(server: ViteDevServer, ctx: ApiContext): voi
         if (!isAgentProviderId(body.provider)) return json(res, 400, { error: 'invalid provider' });
         const id = body.provider;
         logins.get(id)?.child.kill();
+        if (id === 'claude') await saveClaudeKey(null);
         const cli = findOnPath(providers[id].cliCommand);
-        if (cli) await runCommand({ cmd: cli, args: AUTH_COMMANDS[id].logout }, ctx.userCwd);
+        if (cli) {
+          await runCommand(
+            { cmd: cli, args: AUTH_COMMANDS[id].logout, env: cliEnv(id) },
+            ctx.userCwd,
+          );
+        }
         forgetAuth(id);
         return json(res, 200, { ok: true });
       }

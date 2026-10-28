@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { claudeConfigDir, cliEnv } from './accounts.ts';
 import type { AgentAuth, AgentProviderId } from './types.ts';
 
 const STATUS_TIMEOUT_MS = 8000;
@@ -15,11 +18,16 @@ export function forgetAuth(id: AgentProviderId): void {
 // these so nobody needs a terminal to log in.
 type AuthCommands = {
   status: string[];
-  login: string[];
   logout: string[];
+  // The CLI's own sign-in page, for a provider that signs in in the browser.
+  browserLogin?: {
+    args: string[];
+    // The address the CLI opens (or asks to be opened) to sign in.
+    url(output: string): string | null;
+  };
+  // Signs in with an API key read on stdin, for a CLI that can.
+  keyLogin?: string[];
   read(code: number, output: string): AgentAuth;
-  // The address the CLI opens (or asks to be opened) to sign in.
-  loginUrl(output: string): string | null;
 };
 
 // `codex login status` exits 0 once signed in ("Logged in using ChatGPT").
@@ -28,15 +36,21 @@ export function readCodexAuth(code: number, output: string): AgentAuth {
   return /not logged in/i.test(output) ? 'loggedOut' : 'unknown';
 }
 
-// `claude auth status` prints JSON with a `loggedIn` flag.
+// `claude auth status` prints JSON with a `loggedIn` flag. A Claude plan
+// (`authMethod: "claude.ai"`) may not drive the panel, so it counts as signed
+// out; even `claude auth login --console` can land on one when the Console
+// account also has a plan.
 export function readClaudeAuth(_code: number, output: string): AgentAuth {
   const start = output.indexOf('{');
   const end = output.lastIndexOf('}');
   if (start < 0 || end < start) return 'unknown';
   try {
-    const parsed = JSON.parse(output.slice(start, end + 1)) as { loggedIn?: unknown };
+    const parsed = JSON.parse(output.slice(start, end + 1)) as {
+      loggedIn?: unknown;
+      authMethod?: unknown;
+    };
     if (typeof parsed.loggedIn !== 'boolean') return 'unknown';
-    return parsed.loggedIn ? 'loggedIn' : 'loggedOut';
+    return parsed.loggedIn && parsed.authMethod !== 'claude.ai' ? 'loggedIn' : 'loggedOut';
   } catch {
     return 'unknown';
   }
@@ -54,17 +68,19 @@ export function firstHttpsUrl(output: string, host: RegExp): string | null {
 export const AUTH_COMMANDS: Record<AgentProviderId, AuthCommands> = {
   codex: {
     status: ['login', 'status'],
-    login: ['login'],
     logout: ['logout'],
+    browserLogin: {
+      args: ['login'],
+      url: (output) => firstHttpsUrl(output, /(^|\.)openai\.com$/),
+    },
+    keyLogin: ['login', '--with-api-key'],
     read: readCodexAuth,
-    loginUrl: (output) => firstHttpsUrl(output, /(^|\.)openai\.com$/),
   },
+  // Signs in with a pasted Anthropic API key only (see saveClaudeKey).
   claude: {
     status: ['auth', 'status'],
-    login: ['auth', 'login', '--claudeai'],
     logout: ['auth', 'logout'],
     read: readClaudeAuth,
-    loginUrl: (output) => firstHttpsUrl(output, /(^|\.)(claude\.com|claude\.ai|anthropic\.com)$/),
   },
 };
 
@@ -84,6 +100,7 @@ function askAuth(cliPath: string, id: AgentProviderId): Promise<AgentAuth> {
     let child: ReturnType<typeof spawn>;
     try {
       child = spawn(cliPath, commands.status, {
+        env: cliEnv(id),
         stdio: ['ignore', 'pipe', 'pipe'],
         shell: process.platform === 'win32',
         windowsHide: true,
@@ -109,6 +126,72 @@ function askAuth(cliPath: string, id: AgentProviderId): Promise<AgentAuth> {
     child.on('close', (code) => {
       clearTimeout(timer);
       resolve(commands.read(code ?? 1, output));
+    });
+  });
+}
+
+const KEY_LOGIN_TIMEOUT_MS = 30_000;
+
+// Claude Code has no command that takes a key; it reads ANTHROPIC_API_KEY from
+// the `env` block of the settings in its config folder, the panel's own one.
+// `null` takes the key out again.
+export async function saveClaudeKey(key: string | null): Promise<void> {
+  const file = path.join(claudeConfigDir(), 'settings.json');
+  let settings: { env?: Record<string, string> } = {};
+  try {
+    settings = JSON.parse(await fs.readFile(file, 'utf8'));
+  } catch {}
+  const env = { ...settings.env };
+  if (key) env.ANTHROPIC_API_KEY = key;
+  else delete env.ANTHROPIC_API_KEY;
+  await fs.writeFile(file, `${JSON.stringify({ ...settings, env }, null, 2)}\n`, { mode: 0o600 });
+  // `mode` only applies to a new file; the key must not sit in a readable one.
+  await fs.chmod(file, 0o600);
+  forgetAuth('claude');
+}
+
+// Codex takes the key on stdin and keeps it itself.
+export async function loginWithKey(
+  cliPath: string,
+  id: AgentProviderId,
+  key: string,
+): Promise<{ ok: boolean; output: string }> {
+  if (id === 'claude') {
+    await saveClaudeKey(key);
+    return { ok: true, output: '' };
+  }
+  const args = AUTH_COMMANDS[id].keyLogin;
+  if (!args) return Promise.resolve({ ok: false, output: 'no API key sign-in' });
+  return new Promise((resolve) => {
+    let output = '';
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(cliPath, args, {
+        env: cliEnv(id),
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: process.platform === 'win32',
+        windowsHide: true,
+      });
+    } catch (err) {
+      resolve({ ok: false, output: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    const timer = setTimeout(() => child.kill(), KEY_LOGIN_TIMEOUT_MS);
+    const onData = (c: Buffer) => {
+      output += c.toString('utf8');
+    };
+    child.stdout?.on('data', onData);
+    child.stderr?.on('data', onData);
+    child.stdin?.on('error', () => {});
+    child.stdin?.end(`${key}\n`);
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ ok: false, output: err.message });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      forgetAuth(id);
+      resolve({ ok: code === 0, output: output.trim() });
     });
   });
 }

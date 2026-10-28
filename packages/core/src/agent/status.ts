@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { type PackageManager, runCommand } from '../vite/routes/update.ts';
+import { loginMethod } from './accounts.ts';
 import { readAuth } from './auth.ts';
 import { commandVersion, findOnPath, resolveWorkspacePackage } from './detect.ts';
 import type { AgentProvider } from './provider.ts';
@@ -38,6 +39,7 @@ async function providerStatus(
     cliVersion,
     ready,
     auth,
+    loginMethod: loginMethod(provider.id),
     installProgress,
     models,
   };

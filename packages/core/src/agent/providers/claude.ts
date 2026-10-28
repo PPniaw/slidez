@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { claudeConfigDir, cliEnv, hasFile } from '../accounts.ts';
 import { findSpawnableCli, importWorkspacePackage } from '../detect.ts';
 import {
   type AgentProvider,
@@ -214,6 +216,17 @@ export function createClaudeProvider(): AgentProvider {
 
       const localCli = findSpawnableCli('claude');
       const effort = claudeEffort(opts.effort);
+      // A conversation from before the panel had its own account lives in the
+      // user's ~/.claude, which this account can't resume, so it starts over.
+      const resume =
+        opts.resume &&
+        (await hasFile(
+          path.join(claudeConfigDir(), 'projects'),
+          (name) => name === `${opts.resume}.jsonl`,
+          1,
+        ))
+          ? opts.resume
+          : null;
       let stderr = '';
       const stream = sdk.query({
         prompt: opts.prompt,
@@ -225,11 +238,12 @@ export function createClaudeProvider(): AgentProvider {
           includePartialMessages: true,
           abortController,
           canUseTool,
-          ...(opts.resume ? { resume: opts.resume } : {}),
-          ...(opts.resume && opts.resumeAt ? { resumeSessionAt: opts.resumeAt } : {}),
+          ...(resume ? { resume } : {}),
+          ...(resume && opts.resumeAt ? { resumeSessionAt: opts.resumeAt } : {}),
           ...(opts.model ? { model: opts.model } : {}),
           ...(effort ? { effort } : {}),
           ...(localCli ? { pathToClaudeCodeExecutable: localCli } : {}),
+          env: cliEnv('claude'),
           stderr: (data: string) => {
             stderr = (stderr + data).slice(-2000);
           },

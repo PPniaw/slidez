@@ -15,21 +15,18 @@ describe('readClaudeAuth', () => {
     expect(readClaudeAuth(1, '{\n  "loggedIn": false,\n  "authMethod": "none"\n}\n')).toBe(
       'loggedOut',
     );
-    expect(readClaudeAuth(0, '{"loggedIn": true, "authMethod": "claude.ai"}')).toBe('loggedIn');
+    expect(readClaudeAuth(0, '{"loggedIn": true, "authMethod": "api_key"}')).toBe('loggedIn');
+    // A Claude plan may not drive the panel.
+    expect(readClaudeAuth(0, '{"loggedIn": true, "authMethod": "claude.ai"}')).toBe('loggedOut');
     expect(readClaudeAuth(1, 'command not found')).toBe('unknown');
   });
 });
 
 describe('login urls', () => {
-  it('picks the sign-in page each CLI prints', () => {
-    const claude =
-      "Opening browser to sign in…\nIf the browser didn't open, visit: https://claude.com/cai/oauth/authorize?code=true&client_id=x\nPaste code here if prompted > ";
-    expect(AUTH_COMMANDS.claude.loginUrl(claude)).toBe(
-      'https://claude.com/cai/oauth/authorize?code=true&client_id=x',
-    );
+  it('picks the sign-in page Codex prints', () => {
     const codex =
       'Starting local login server on http://localhost:1455.\nIf your browser did not open, navigate to this URL to authenticate:\n\nhttps://auth.openai.com/oauth/authorize?response_type=code&client_id=app_x\n';
-    expect(AUTH_COMMANDS.codex.loginUrl(codex)).toBe(
+    expect(AUTH_COMMANDS.codex.browserLogin?.url(codex)).toBe(
       'https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_x',
     );
   });

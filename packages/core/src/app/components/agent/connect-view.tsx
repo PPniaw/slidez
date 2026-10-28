@@ -7,6 +7,7 @@ import {
   installProvider,
   type LoginPrompt,
   loginProvider,
+  loginWithApiKey,
   logoutProvider,
   refreshStatus,
   selectProvider,
@@ -157,12 +158,14 @@ function ProviderCard({
   const missing = !host && needsCli(provider);
   const signedOut = provider.ready && provider.auth === 'loggedOut';
   const usable = provider.ready && !signedOut;
+  const keyLogin = provider.loginMethod === 'apiKey';
   const cliLabel = provider.cliFound
     ? provider.cliVersion
       ? format(t.agent.cliFound, { version: provider.cliVersion })
       : t.agent.cliFoundNoVersion
     : t.agent.cliMissing;
-  const name = host ? (provider.id === 'codex' ? s.codexName : s.claudeName) : provider.name;
+  const codexName = keyLogin ? s.codexKeyName : s.codexName;
+  const name = host ? (provider.id === 'codex' ? codexName : s.claudeName) : provider.name;
   const progress = provider.installProgress;
 
   let action: React.ReactNode = null;
@@ -178,17 +181,18 @@ function ProviderCard({
       </Button>
     );
   } else if (signedOut) {
-    action = login ? null : (
-      <Button
-        size="sm"
-        variant={error ? 'outline' : 'default'}
-        onClick={() => void loginProvider(provider.id)}
-        data-agent-action="login"
-      >
-        <LogIn className="size-3.5" aria-hidden />
-        {s.login}
-      </Button>
-    );
+    action =
+      login || keyLogin ? null : (
+        <Button
+          size="sm"
+          variant={error ? 'outline' : 'default'}
+          onClick={() => void loginProvider(provider.id)}
+          data-agent-action="login"
+        >
+          <LogIn className="size-3.5" aria-hidden />
+          {s.login}
+        </Button>
+      );
   } else if (installing) {
     action = host ? null : (
       <span className="inline-flex items-center gap-1.5 px-1 text-[11.5px] text-muted-foreground">
@@ -250,6 +254,8 @@ function ProviderCard({
         </p>
       </div>
     );
+  } else if (signedOut && keyLogin) {
+    detail = <KeyLogin provider={provider.id} />;
   } else if (login) {
     detail = <LoginWaiting provider={provider.id} login={login} />;
   } else if (error && !installing) {
@@ -263,7 +269,13 @@ function ProviderCard({
     detail = (
       <p className="mt-2 flex items-center justify-between gap-2 text-[11px] leading-relaxed text-muted-foreground">
         <span>
-          {signedOut ? s.loggedOutHint : provider.id === 'codex' ? s.codexNote : s.claudeNote}
+          {signedOut
+            ? s.loggedOutHint
+            : provider.id === 'codex'
+              ? keyLogin
+                ? s.codexKeyNote
+                : s.codexNote
+              : s.claudeNote}
         </span>
         {usable && provider.auth === 'loggedIn' && (
           <LogoutButton provider={provider.id} label={s.logout} />
@@ -386,6 +398,69 @@ function LoginWaiting({ provider, login }: { provider: AgentProviderId; login: L
         </form>
       )}
     </div>
+  );
+}
+
+const KEY_PAGE: Record<AgentProviderId, string> = {
+  claude: 'https://console.anthropic.com/settings/keys',
+  codex: 'https://platform.openai.com/api-keys',
+};
+
+function KeyLogin({ provider }: { provider: AgentProviderId }) {
+  const s = useAgentForkStrings();
+  const [key, setKey] = useState('');
+  const [sending, setSending] = useState(false);
+  const claude = provider === 'claude';
+  return (
+    <form
+      className="mt-2.5 flex flex-col gap-1.5"
+      data-agent-key-login={provider}
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!key.trim()) return;
+        setSending(true);
+        try {
+          await loginWithApiKey(provider, key);
+          setKey('');
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : String(err));
+        } finally {
+          setSending(false);
+        }
+      }}
+    >
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        {claude ? s.claudeNote : s.codexKeyNote}
+      </p>
+      <label className="text-[11px] text-muted-foreground" htmlFor={`agent-key-${provider}`}>
+        {claude ? s.claudeKeyLabel : s.codexKeyLabel}
+      </label>
+      <div className="flex gap-1.5">
+        <input
+          id={`agent-key-${provider}`}
+          type="password"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+          className="h-7 min-w-0 flex-1 rounded-[5px] border border-border bg-background px-2 font-mono text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        />
+        <Button size="xs" type="submit" disabled={sending || !key.trim()}>
+          {sending && (
+            <Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden />
+          )}
+          {s.keySubmit}
+        </Button>
+      </div>
+      <a
+        href={KEY_PAGE[provider]}
+        target="_blank"
+        rel="noreferrer"
+        className="self-start text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+      >
+        {claude ? s.claudeKeyCreate : s.codexKeyCreate}
+      </a>
+    </form>
   );
 }
 

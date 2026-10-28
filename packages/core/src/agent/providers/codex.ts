@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
+import { cliEnv, codexHome, hasFile } from '../accounts.ts';
 import { findSpawnableCli, importWorkspacePackage } from '../detect.ts';
 import { extractQuestionBlock, TEXT_QUESTIONS_INSTRUCTION } from '../prompt.ts';
 import {
@@ -50,9 +50,9 @@ export function parseCodexModelsCache(raw: unknown): AgentModelOption[] {
 }
 
 async function readCodexModels(): Promise<AgentModelOption[]> {
-  const home = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
   try {
-    const raw = JSON.parse(await fs.readFile(path.join(home, 'models_cache.json'), 'utf8'));
+    const file = path.join(codexHome(), 'models_cache.json');
+    const raw = JSON.parse(await fs.readFile(file, 'utf8'));
     const models = parseCodexModelsCache(raw);
     return models.length > 0 ? models : [CODEX_DEFAULT_MODEL];
   } catch {
@@ -206,6 +206,7 @@ export function createCodexProvider(): AgentProvider {
       const codex = new sdk.Codex({
         ...(localCli ? { codexPathOverride: localCli } : {}),
         configOverrides: codexPermissionOverrides(opts.writableRoots),
+        env: cliEnv('codex'),
       });
       const threadOptions = {
         workingDirectory: opts.cwd,
@@ -214,13 +215,24 @@ export function createCodexProvider(): AgentProvider {
         ...(opts.model ? { model: opts.model } : {}),
         ...(opts.effort ? { modelReasoningEffort: opts.effort } : {}),
       };
-      const thread = opts.resume
-        ? codex.resumeThread(opts.resume, threadOptions)
+      // Threads live in CODEX_HOME/sessions/<y>/<m>/<d>/rollout-…-<id>.jsonl; one
+      // kept under another account's home can't be resumed, so it starts over.
+      const resume =
+        opts.resume &&
+        (await hasFile(
+          path.join(codexHome(), 'sessions'),
+          (name) => name.endsWith(`-${opts.resume}.jsonl`),
+          3,
+        ))
+          ? opts.resume
+          : null;
+      const thread = resume
+        ? codex.resumeThread(resume, threadOptions)
         : codex.startThread(threadOptions);
 
       // Codex has no system-prompt hook, so the panel preamble rides on the
       // first turn of a thread only.
-      const input = opts.resume ? opts.prompt : `${opts.systemPromptAppend}\n\n${opts.prompt}`;
+      const input = resume ? opts.prompt : `${opts.systemPromptAppend}\n\n${opts.prompt}`;
       const mapper = createCodexMapper(opts.emit);
       const { events } = await thread.runStreamed(input, { signal: opts.signal });
       try {

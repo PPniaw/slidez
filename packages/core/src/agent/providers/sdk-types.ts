@@ -27,6 +27,7 @@ type ClaudeQueryOptions = {
   pathToClaudeCodeExecutable?: string;
   abortController?: AbortController;
   canUseTool?: ClaudeCanUseTool;
+  env?: Record<string, string | undefined>;
   stderr?: (data: string) => void;
 };
 
@@ -81,7 +82,12 @@ export type ClaudeSdkModule = {
   }) => AsyncIterable<ClaudeSdkMessage>;
 };
 
-type CodexOptions = { codexPathOverride?: string; configOverrides?: string[] };
+type CodexOptions = {
+  codexPathOverride?: string;
+  configOverrides?: string[];
+  // Replaces the CLI's environment instead of adding to it.
+  env?: Record<string, string>;
+};
 
 type CodexThreadOptions = {
   workingDirectory?: string;

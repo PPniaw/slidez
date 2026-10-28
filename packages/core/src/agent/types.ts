@@ -24,6 +24,9 @@ export type AgentModelOption = {
 // 'unknown' when there is no CLI on PATH to ask, or it gave no clear answer.
 export type AgentAuth = 'loggedIn' | 'loggedOut' | 'unknown';
 
+// 'browser' runs the CLI's own sign-in page; 'apiKey' takes a pasted key.
+export type AgentLoginMethod = 'browser' | 'apiKey';
+
 export type AgentProviderStatus = {
   id: AgentProviderId;
   name: string;
@@ -34,6 +37,7 @@ export type AgentProviderStatus = {
   cliVersion: string | null;
   ready: boolean;
   auth: AgentAuth;
+  loginMethod: AgentLoginMethod;
   // 0..1 while a host installer is downloading this provider, else null.
   installProgress: number | null;
   models: AgentModelOption[];

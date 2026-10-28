@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronLeft,
   History,
+  LogOut,
   MessageSquare,
   Palette,
   Pencil,
@@ -23,6 +24,7 @@ import {
   consumeRequest,
   createSession,
   deleteSession,
+  logoutProvider,
   prepareAgentTurn,
   readyProviders,
   resolveModelChoice,
@@ -50,6 +52,7 @@ import type {
 } from '../../../agent/types';
 import { Composer, ContextChip } from './composer';
 import { ConnectView } from './connect-view';
+import { useAgentForkStrings } from './fork-strings';
 import { HistoryView } from './history-view';
 import { ProviderLogo } from './provider-logo';
 import { Transcript } from './transcript';
@@ -379,6 +382,7 @@ function ModelMenu({
   onManage: () => void;
 }) {
   const t = useLocale();
+  const s = useAgentForkStrings();
   const [open, setOpen] = useState(false);
   const providers = status?.enabled ? status.providers : [];
   const [tab, setTab] = useState<AgentProviderId | null>(providerId);
@@ -549,6 +553,31 @@ function ModelMenu({
             <Settings2 className="size-3.5" />
             {t.agent.manageConnections}
           </button>
+          {shown?.auth === 'loggedIn' && (
+            <button
+              type="button"
+              onClick={async () => {
+                setOpen(false);
+                try {
+                  await logoutProvider(shown.id);
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : String(err));
+                }
+              }}
+              className="flex h-7 items-center gap-2 rounded-[5px] px-2 text-[12.5px] text-muted-foreground outline-none transition-colors duration-100 hover:bg-muted hover:text-foreground focus-visible:bg-muted"
+              data-agent-action="logout"
+            >
+              <LogOut className="size-3.5" />
+              {format(s.logoutOf, {
+                name:
+                  shown.id === 'claude'
+                    ? s.claudeName
+                    : shown.loginMethod === 'apiKey'
+                      ? s.codexKeyName
+                      : s.codexName,
+              })}
+            </button>
+          )}
         </div>
       </PopoverContent>
     </Popover>

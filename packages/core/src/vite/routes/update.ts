@@ -21,7 +21,7 @@ const COMMAND_TIMEOUT_MS = 300_000;
 
 type CheckResult = { current: string; latest: string | null; outdated: boolean };
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
-type CommandSpec = { cmd: string; args: string[] };
+type CommandSpec = { cmd: string; args: string[]; env?: NodeJS.ProcessEnv };
 type UpdateResult = {
   packageManager: PackageManager;
   command: string;
@@ -140,7 +140,7 @@ export async function runCommand(
   await new Promise<void>((resolve, reject) => {
     const child = spawn(spec.cmd, spec.args, {
       cwd,
-      env: process.env,
+      env: spec.env ?? process.env,
       shell: process.platform === 'win32',
       stdio: ['ignore', 'ignore', 'pipe'],
       windowsHide: true,
